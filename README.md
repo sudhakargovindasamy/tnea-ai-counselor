@@ -95,7 +95,48 @@ uv run uvicorn app.main:app --reload --port 8000
 
 ## 🤝 Team
 
-- **Sudhakar** - Backend Developer & AI Engineer
+This project is developed as part of our internship by a collaborative team, with each member contributing to specific areas of the system.
+
+| Member | Role | Responsibilities |
+|--------|------|------------------|
+| **Sudhakar** | Backend Developer & AI Engineer | Designed and developed the complete RAG pipeline, FastAPI backend, Supabase/pgvector integration, Agentic Query Routing, Semantic Caching, Conversational Memory, and Gemini LLM integration with fallback chains. |
+| **Kavivarshini** | AI/ML Engineer | Co-developed the RAG model alongside the backend team, including retrieval optimization, embedding strategies, query understanding, and anti-hallucination guardrails. |
+| **Poojitha** | Data Engineer | Responsible for extracting raw data from source documents, designing the document structure, data cleaning, and converting unstructured data into clean, structured CSV formats for the knowledge base. |
+| **Lekhana** | Frontend Developer | Designed and developed the user-facing chat interface, integrating with the FastAPI backend to deliver a seamless conversational experience. |
+
+---
+
+### 👨‍💻 Individual Contributions
+
+#### Sudhakar — Backend Developer & AI Engineer
+- Built the **FastAPI backend** with production-grade error handling
+- Implemented **Agentic RAG pipeline** (Vector Search, SQL Filtering, Numerical Queries)
+- Developed **Conversational Memory** with History-Aware Query Translation
+- Integrated **Semantic Caching** for zero-cost repeated queries
+- Set up **Supabase + pgvector** vector database
+- Configured **Gemini LLM** with multi-model fallback chains
+- Implemented **Anti-Hallucination Guardrails** and confidence scoring
+
+#### Kavivarshini — AI/ML Engineer
+- Co-developed the **RAG retrieval pipeline**
+- Optimized **embedding strategies** using Sentence Transformers
+- Fine-tuned **query understanding** and intent classification
+- Implemented **Cross-Encoder reranking** for improved retrieval quality
+- Collaborated on **Fuzzy Entity Matching** and alias resolution
+
+#### Poojitha — Data Engineer
+- **Extracted** raw data from official TNEA source documents
+- **Designed** structured document schemas for colleges, branches, and performance data
+- **Cleaned and normalized** 418 colleges, 3518 branches, and performance records
+- **Converted** unstructured data into structured CSV formats (`colleges_db_df.csv`, `branches_db_df.csv`, `performance_db_df.csv`)
+- Ensured data quality and consistency for accurate retrieval
+
+#### Lekhana — Frontend Developer
+- Built the **Chat UI** for the AI Counselor
+- Integrated with **FastAPI backend** (`/query`, `/clear_chat`, `/health` endpoints)
+- Implemented **Markdown rendering** for AI responses
+- Designed **source citation cards** to display retrieved college information
+- Handled **session management** and loading states
 
 ## 📄 License
 
