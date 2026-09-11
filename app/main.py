@@ -41,6 +41,14 @@ async def global_exception_handler(request: Request, exc: Exception):
         },
     )
 
+@app.get("/")
+def root():
+    return {
+        "message": "TNEA Counselor AI API is running",
+        "docs": "/docs",
+        "health": "/health"
+    }
+
 @app.get("/health")
 def health():
     return {"status": "healthy", "version": "1.0-final"}

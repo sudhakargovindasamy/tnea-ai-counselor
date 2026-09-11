@@ -1,3 +1,13 @@
+---
+title: TNEA Counselor AI API
+emoji: 🎓
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_port: 7860
+pinned: false
+---
+
 # 🎓 TNEA Counselor AI
 
 > An **AI-Powered Engineering College Guidance System** for Tamil Nadu students, built using **RAG (Retrieval-Augmented Generation)** technology.
