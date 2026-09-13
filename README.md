@@ -76,6 +76,8 @@ graph TD
     LLM --> SaveCache[Save to Cache<br/>7-day TTL]
     SaveCache --> Response
 
+```
+
 ## 📁 Project Structure
 
 ```text
