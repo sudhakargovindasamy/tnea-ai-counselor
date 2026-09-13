@@ -5,7 +5,7 @@ import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -26,24 +26,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Production check
-IS_PRODUCTION = os.getenv("IS_PRODUCTION", "false").lower() == "true"
-
-# 🚀 LIFESPAN / STARTUP EVENT (Preload Models to prevent first-request timeouts)
+# 🚀 LIFESPAN / STARTUP EVENT (Preload Models & Verify DB)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 Starting TNEA Counselor AI API...")
     logger.info("🔄 Preloading ML models (this may take a minute on first deploy)...")
     try:
-        # Importing these here triggers the model loading in your service files
+        # Importing these triggers the model loading in your service files
         from app.services.retrieval import embedding_model, reranker
-        from app.services.llm import genai_client 
-        from app.services.query_understanding import genai_client as understand_client
-        logger.info("✅ ML models and LLM clients loaded successfully!")
+        logger.info("✅ ML models loaded successfully!")
     except Exception as e:
-        logger.warning(f"⚠️ Could not preload all models at startup: {e}")
+        logger.warning(f"⚠️ Could not preload models at startup: {e}")
         logger.info("ℹ️ Models will be loaded lazily on the first request.")
     
+    # Quick DB check to ensure credentials are valid
+    try:
+        supabase.table("documents").select("id").limit(1).execute()
+        logger.info("✅ Supabase database connection verified.")
+    except Exception as e:
+        logger.error(f"❌ Supabase connection failed: {e}")
+
     yield  # App runs here
     
     logger.info("👋 Shutting down TNEA Counselor AI API...")
@@ -55,23 +57,11 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# 🚀 1. CORS MIDDLEWARE (Dynamic based on Environment)
-if IS_PRODUCTION:
-    # 🔒 In production, restrict origins to your actual frontend URLs
-    # Update these with Lekhana's actual deployed frontend URLs later!
-    allowed_origins = [
-        "https://your-frontend-app.vercel.app",
-        "https://your-frontend-app.onrender.com",
-        "http://localhost:3000",  # Keep localhost so she can test locally against the live API
-        "http://localhost:5173",  # Vite default port
-    ]
-else:
-    # 🛠️ In development, allow all
-    allowed_origins = ["*"]
-
+# 🚀 1. CORS MIDDLEWARE
+# Kept wide open ["*"] so Lekhana can connect from localhost, Vercel, or anywhere without CORS headaches.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=["*"],  
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -89,14 +79,42 @@ async def global_exception_handler(request: Request, exc: Exception):
         },
     )
 
-@app.get("/")
+# 🚀 3. ROOT ENDPOINT (Beautiful UI for Hugging Face Spaces iframe)
+@app.get("/", response_class=HTMLResponse)
 def root():
-    return {
-        "message": "TNEA Counselor AI API is running", 
-        "docs": "/docs", 
-        "health": "/health",
-        "environment": "production" if IS_PRODUCTION else "development"
-    }
+    return """
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>TNEA Counselor AI API</title>
+        <style>
+            body { font-family: system-ui, -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f4f4f9; color: #333; }
+            .container { text-align: center; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 500px; }
+            h1 { color: #2563eb; }
+            .badge { display: inline-block; background: #10b981; color: white; padding: 5px 10px; border-radius: 20px; font-size: 14px; margin-bottom: 20px; }
+            a { color: #2563eb; text-decoration: none; font-weight: bold; }
+            a:hover { text-decoration: underline; }
+            .endpoints { text-align: left; background: #f8fafc; padding: 15px; border-radius: 8px; margin-top: 20px; font-family: monospace; font-size: 14px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <span class="badge">🟢 API ONLINE</span>
+            <h1>🎓 TNEA Counselor AI</h1>
+            <p>The backend API is running successfully on Hugging Face Spaces.</p>
+            <p>This is a headless API. Please use the interactive documentation below to test endpoints or connect your React frontend.</p>
+            <div class="endpoints">
+                <strong>Available Routes:</strong><br>
+                📚 <a href="/docs">/docs</a> (Swagger UI)<br>
+                🩺 <a href="/health">/health</a> (Status Check)<br>
+                💬 <a href="/redoc">/redoc</a> (ReDoc)
+            </div>
+        </div>
+    </body>
+    </html>
+    """
 
 @app.get("/health")
 def health():
@@ -129,7 +147,6 @@ def extract_source_info(doc: dict) -> Source:
     
     raw_score = doc.get("similarity", doc.get("rerank_score", 0.0))
     
-    # Normalize reranker logits to 0-1 range
     if raw_score < 0 or raw_score > 1:
         normalized_score = 1 / (1 + math.exp(-raw_score / 5))
     else:
@@ -155,7 +172,7 @@ def format_cache_response(cached_response):
     else:
         return QueryResponse(answer=str(cached_response), sources=[])
 
-# 🚀 3. ADMIN PURGE CACHE ENDPOINT
+# 🚀 4. ADMIN PURGE CACHE ENDPOINT
 @app.post("/admin/purge_cache")
 def purge_cache(admin_secret: str):
     expected_secret = os.getenv("ADMIN_SECRET_KEY", "TNEA_SUPER_SECRET_ADMIN_KEY_2026")
@@ -169,7 +186,7 @@ def purge_cache(admin_secret: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# 🚀 4. USER FEEDBACK ENDPOINT (The "Thumbs Down" Button)
+# 🚀 5. USER FEEDBACK ENDPOINT
 @app.post("/feedback/downvote")
 def report_bad_answer(question: str):
     try:
@@ -179,10 +196,10 @@ def report_bad_answer(question: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# 🚀 5. MAIN QUERY ENDPOINT
+# 🚀 6. MAIN QUERY ENDPOINT
 @app.post("/query", response_model=QueryResponse)
 def query(req: QueryRequest):
-    start_time = time.time()  # ⏱️ Track execution time
+    start_time = time.time()
     try:
         logger.info(f"[{req.session_id}] Query: {req.question}")
 
