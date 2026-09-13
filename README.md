@@ -1,16 +1,3 @@
-# 📄 Updated README.md (Production-Ready, No "Agentic" Terminology)
-
-Here is your fully updated README that reflects the **actual production architecture** we built together. I've removed all "Agentic" terminology and replaced it with accurate engineering terms like "Smart Routing" and "Hybrid Search". It also preserves your Hugging Face Space frontmatter.
-
----
-
-### 📋 Instructions:
-1. Open your `README.md` file
-2. **Delete everything** in it
-3. **Paste this exact content** below
-4. Save the file
-
----
 
 ```markdown
 ---
@@ -96,7 +83,7 @@ graph TD
 
 ## 📁 Project Structure
 
-```
+```text
 RAG-final/
 ├── app/
 │   ├── main.py                    # FastAPI app, CORS, Admin & Feedback endpoints
@@ -324,31 +311,3 @@ This project is created for educational purposes as part of our internship progr
 
 *Built with ❤️ for Tamil Nadu Engineering Students*
 ```
-
----
-
-## 📤 Push to GitHub
-
-Once you've saved the updated `README.md`, run these commands:
-
-```bash
-git add README.md
-git commit -m "📚 Update README with production architecture & detailed contributions"
-git push origin main
-```
-
----
-
-## ✅ What Changed in This Update
-
-| Before | After |
-|--------|-------|
-| "Agentic RAG Pipeline" | "Smart Intent Routing" (more accurate term) |
-| Generic feature list | Specific features we actually built (SQL Joins, TTL, Feedback Loop) |
-| Basic architecture diagram | Detailed Mermaid diagram showing actual flow |
-| Vague team roles | Specific, honest contributions for each member |
-| No dataset stats | Added clear statistics (418 + 3518 + 10 = 3946 docs) |
-| Basic test section | Real test cases with expected outputs |
-| No deployment details | Added Render + HF Spaces deployment guide |
-
----
