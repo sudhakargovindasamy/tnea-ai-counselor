@@ -1,5 +1,3 @@
-
-```markdown
 ---
 title: TNEA Counselor AI API
 emoji: 🎓
@@ -77,7 +75,6 @@ graph TD
     
     LLM --> SaveCache[Save to Cache<br/>7-day TTL]
     SaveCache --> Response
-```
 
 ---
 
