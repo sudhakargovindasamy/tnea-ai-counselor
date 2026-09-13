@@ -39,4 +39,9 @@ Thumbs.db
 .pytest_cache/
 .coverage
 htmlcov/
-*.log
+*.log.env
+__pycache__/
+*.pyc
+.venv/
+test_db.py
+test_join.py

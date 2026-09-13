@@ -1,0 +1,372 @@
+[
+  {
+    "section": "Allocation of Seats",
+    "content": {
+      "selection_categories": [
+        "OC",
+        "BC",
+        "BCM",
+        "MBC & DNC",
+        "SC",
+        "SCA",
+        "ST"
+      ],
+      "rule_of_reservation": {
+        "OC": "31.00%",
+        "BC": "26.50%",
+        "BCM": "3.50%",
+        "MBC & DNC": "20.00%",
+        "SC": "15.00%",
+        "SCA": "3.00%",
+        "ST": "1.00%",
+        "Total": "100%"
+      }
+    },
+    "source_document": "TNEA Information Brochure 2026",
+    "source_page": 4
+  },
+  {
+    "section": "Tuition Fee Concession",
+    "content": {
+      "government_school_7_5_percent_reservation": {
+        "fee_waiver": [
+          "Counselling fee",
+          "Tuition fee",
+          "Hostel fee"
+        ],
+        "government_school_study_required": "Sixth Standard to Twelfth Standard",
+        "eligible_school_categories": [
+          "Government Schools",
+          "Corporation Schools",
+          "Municipal Schools",
+          "AdiDravida And Tribal Welfare Schools",
+          "Kallar Reclamation Schools",
+          "Forest Department Schools",
+          "Schools Managed by Government Departments"
+        ]
+      },
+      "first_graduate_tuition_fee_concession": {
+        "eligible_for": [
+          "Candidates who are the first graduate in a family",
+          "Candidates attending counselling and joining professional courses"
+        ],
+        "college_types": [
+          "Government Colleges",
+          "Aided Colleges",
+          "Self-Financing Colleges"
+        ]
+      },
+      "aicte_tuition_fee_waiver": {
+        "applicable_to": [
+          "Self-Financing Engineering Colleges",
+          "Self-Supporting courses in Government Aided Engineering Colleges"
+        ],
+        "courses": [
+          "B.E.",
+          "B.Tech."
+        ],
+        "maximum_seats": "5% of sanctioned intake per course",
+        "parent_annual_income_limit": "Less than Rs.8,00,000",
+        "other_fees": "All other fees except tuition fee must be paid by the candidate"
+      },
+      "post_matric_scholarship": {
+        "eligible_categories": [
+          "SC",
+          "SCA",
+          "ST",
+          "SC/SCA converted Christians"
+        ],
+        "parent_annual_income_limit": "Less than Rs.2,50,000",
+        "requirement": "Income certificate from appropriate authorities"
+      }
+    },
+    "source_document": "TNEA Information Brochure 2026",
+    "source_page": 11
+  },
+  {
+    "section": "Procedure for Registration of Application",
+    "content": {
+      "application_mode": "Online",
+      "admission_system": "TNEA 2026",
+      "application_portals": [
+        "www.tneaonline.org",
+        "www.dte.tn.gov.in"
+      ],
+      "registration_requirements": [
+        "Mobile phone number",
+        "E-mail ID",
+        "10th Marksheet",
+        "+2 Marksheet",
+        "School details from 6th to 12th standards",
+        "Community/Caste details",
+        "Aadhaar card",
+        "Parent annual income details",
+        "Payment details"
+      ],
+      "special_reservation_options": [
+        "7.5% reservation for Government School Students",
+        "Son/Daughter of Ex-servicemen",
+        "Differently abled persons",
+        "Eminent sportsperson"
+      ],
+      "fee_concession_options": [
+        "First graduation Fee concession",
+        "Post-matric scholarship"
+      ],
+      "registration_fee": {
+        "OC/BC/BCM/MBC&DNC": "Rs. 500",
+        "SC/SCA/ST": "Rs. 250"
+      }
+    },
+    "source_document": "TNEA Information Brochure 2026",
+    "source_page": 12
+  },
+  {
+    "section": "Uploading Copy of Original Certificates",
+    "content": {
+      "required_certificates": [
+        "10th Marksheet",
+        "HSC First Year (+1) Marksheet",
+        "HSC Second Year (+2) / Equivalent Marksheet",
+        "Transfer Certificate"
+      ],
+      "reservation_and_category_certificates": [
+        "Government school study details from 6th to 12th standard for 7.5% Government School Students Reservation",
+        "Permanent Community Certificate for ST, SC, SCA, MBC&DNC, BC and BCM"
+      ],
+      "conditional_certificates": [
+        "Nativity Certificate",
+        "Income Certificate",
+        "First Graduate Certificate",
+        "First Graduate Joint Declaration",
+        "Srilankan Tamil Refugee Certificate"
+      ],
+      "special_reservation_certificates": {
+        "son_or_daughter_of_ex_servicemen": [
+          "Parent's Discharge Certificate",
+          "Parent's ID Card"
+        ],
+        "differently_abled_persons": [
+          "Medical Certificate obtained from Medical Board"
+        ],
+        "eminent_sports_persons": [
+          "Sports achievement certificates",
+          "Necessary forms"
+        ]
+      }
+    },
+    "source_document": "TNEA Information Brochure 2026",
+    "source_page": 13
+  },
+  {
+    "section": "Online Choice Filling and Confirmation",
+    "content": {
+      "merit_list": {
+        "subjects": [
+          "Mathematics",
+          "Physics",
+          "Chemistry"
+        ],
+        "maximum_marks": 200,
+        "mark_distribution": {
+          "Mathematics": 100,
+          "Physics": 50,
+          "Chemistry": 50
+        },
+        "ranking": [
+          "Overall rank",
+          "Community rank"
+        ]
+      },
+      "counselling": {
+        "mode": "Online",
+        "number_of_rounds": "Multiple rounds",
+        "participation": "Candidates participate according to their rank",
+        "login_required": true
+      },
+      "online_counselling_procedure": {
+        "stages": [
+          "Choice Filling",
+          "Tentative Allotment",
+          "Confirmation of Tentative Allotment",
+          "Final Allotment"
+        ]
+      },
+      "choice_filling": {
+        "description": "Candidates select and arrange their preferred colleges and branches in order of preference."
+      },
+      "allotment": {
+        "tentative_allotment": "Candidates are provided a tentative seat allotment based on their choices and rank.",
+        "confirmation": "Candidates must confirm the tentative allotment according to the prescribed procedure.",
+        "final_allotment": "Final allotment is published after confirmation."
+      }
+    },
+    "source_document": "TNEA Information Brochure 2026",
+    "source_page": 13
+  },
+  {
+    "section": "Counselling Allotment and Confirmation",
+    "content": {
+      "counselling_stages": [
+        "Choice Filling",
+        "Allotment",
+        "Confirmation of Allotment",
+        "Reporting to College/TFC and payment of fees"
+      ],
+      "choice_filling": {
+        "duration": "Two or three days",
+        "description": "Candidates fill their preferred colleges and branches in order of preference.",
+        "number_of_choices": "Any number of choices"
+      },
+      "allotment": {
+        "based_on": [
+          "Candidate rank",
+          "Community",
+          "Availability of seats",
+          "Order of choices"
+        ]
+      },
+      "confirmation_options": [
+        "Accept and Join",
+        "Accept and Upward",
+        "Decline and Move to Next Round",
+        "Decline and Quit"
+      ],
+      "reporting": {
+        "accept_and_join": "Candidate must report to the allotted college and complete admission by paying the required fees.",
+        "accept_and_upward": "Candidate must report to the nearest TFC, pay the required fees and wait for upward movement."
+      },
+      "important_rule": "Non-reporting or non-payment of required fees may result in cancellation of the allotment."
+    },
+    "source_document": "TNEA Information Brochure 2026",
+    "source_page": 14
+  },
+  {
+    "section": "Special Reservation Categories",
+    "content": {
+      "eligibility": "Only Tamil Nadu Native candidates are eligible for Special Reservation",
+      "categories": {
+        "son_or_daughter_of_ex_servicemen": {
+          "seat_quota": "1 seat",
+          "applicable_colleges": "Stand-alone Self-Financing Colleges"
+        },
+        "persons_with_benchmark_disabilities": {
+          "seat_quota": "5% of seats"
+        },
+        "eminent_sports_persons": {
+          "seat_quota": "6 seats",
+          "seat_distribution": {
+            "University_Department": "1 seat",
+            "Stand_alone_Self_Financing_College": "5 seats"
+          }
+        }
+      },
+      "important_conditions": [
+        "Candidates must produce appropriate certificates and supporting documents.",
+        "If required certificates and documents are not produced, the special reservation claim will not be considered.",
+        "Candidates under special reservation must also satisfy the general eligibility rules.",
+        "Candidates under special reservation are also eligible for admission under general counselling."
+      ],
+      "certificate_requirements": {
+        "ex_servicemen": [
+          "Certificate from the Department of Ex-servicemen's Welfare of Tamil Nadu",
+          "Parent's Discharge Certificate",
+          "Parent's Ex-Servicemen ID Card"
+        ],
+        "persons_with_benchmark_disabilities": [
+          "Medical Certificate from the District Medical Board",
+          "Medical Board must consist of at least 3 doctors"
+        ],
+        "eminent_sports_persons": [
+          "Original sports achievement certificates",
+          "Required forms specified in the brochure"
+        ]
+      }
+    },
+    "source_document": "TNEA Information Brochure 2026",
+    "source_page": 15
+  },
+  {
+    "section": "Course Specific Requirements",
+    "content": {
+      "course": "Marine Engineering",
+      "academic_requirements": {
+        "qualification": "10+2 or equivalent",
+        "subjects": [
+          "Physics",
+          "Chemistry",
+          "Mathematics",
+          "English"
+        ],
+        "minimum_average_in_pcm": "60%",
+        "minimum_english_marks": "50%"
+      },
+      "entrance_exam": "IMU CET",
+      "age_limit": "Maximum 25 years",
+      "physical_requirements": {
+        "minimum_height": "157 cm",
+        "minimum_weight": "48 kg",
+        "colour_vision": "Normal colour vision required"
+      },
+      "medical_requirement": "Physical fitness certificate as prescribed"
+    },
+    "source_document": "TNEA Information Brochure 2026",
+    "source_page": 3
+  },
+  {
+    "section": "Course Specific Requirements",
+    "content": {
+      "course": "Mining Engineering",
+      "female_candidates": {
+        "requirements": [
+          "As per Mines Act 1952, women cannot be employed in any part of a mine below ground.",
+          "In mines above ground, women cannot be employed except between 6 A.M. and 7 P.M.",
+          "As per Coal Mines Regulation 1957, women cannot descend or ascend a shaft in a cage or other means of conveyance unless accompanied by one or more adult males.",
+          "Candidates must satisfy the academic norms of Anna University."
+        ]
+      }
+    },
+    "source_document": "TNEA Information Brochure 2026",
+    "source_page": 3
+  },
+  {
+    "section": "General Eligibility Rules",
+    "content": {
+      "eligibility_condition": "Candidates must satisfy the eligibility conditions as on the last date of submission of the online application.",
+      "nativity": {
+        "tamil_nadu_candidates": [
+          "Candidates who have passed VIII, IX, X, XI and XII standard from schools situated in Tamil Nadu are eligible.",
+          "They need not produce a Nativity Certificate for verification."
+        ],
+        "tamil_nadu_native_outside_tamil_nadu_schooling": [
+          "Tamil Nadu native candidates who have passed any of VIII, IX, X, XI or XII standard from schools outside Tamil Nadu are eligible.",
+          "They must produce a digitally signed electronic Nativity Certificate."
+        ],
+        "central_government_employees_children": {
+          "eligibility": "Children of Central Government Employees can apply irrespective of native place.",
+          "condition": "Parent or guardian must have been serving continuously in Tamil Nadu for the past 5 years at the time of application.",
+          "proof": "Certificate from the employer of the parent or guardian."
+        },
+        "public_sector_or_government_recognised_institution_employees_children": {
+          "eligibility": "Children of employees working in Tamil Nadu can apply irrespective of domicile.",
+          "condition": "Parent must have been employed continuously in Tamil Nadu for the past 5 years.",
+          "proof": [
+            "Employer certificate confirming permanent employment",
+            "Income Tax return",
+            "PF slips or other supporting evidence"
+          ]
+        },
+        "all_india_service_tamil_nadu_cadre_officers_children": {
+          "eligibility": "Sons and daughters of All India Service officers belonging to Tamil Nadu cadre are eligible.",
+          "proof": "Self-declaration from the parent."
+        },
+        "other_state_candidates": {
+          "eligibility": "Other State candidates who have studied VIII, IX, X, XI and XII standard in Tamil Nadu are eligible.",
+          "nativity_certificate": "Not required"
+        }
+      }
+    },
+    "source_document": "TNEA Information Brochure 2026",
+    "source_page": 2
+  }
+]
