@@ -1,9 +1,16 @@
 import logging
 import os
 import math
+import time
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
 from app.models import QueryRequest, QueryResponse, Source
 from app.services.retrieval import retrieve
 from app.services.llm import generate_answer
@@ -12,19 +19,59 @@ from app.services.memory import memory
 from app.services.semantic_cache import check_cache, save_to_cache
 from app.services.database import supabase
 
-logging.basicConfig(level=logging.INFO)
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
 logger = logging.getLogger(__name__)
+
+# Production check
+IS_PRODUCTION = os.getenv("IS_PRODUCTION", "false").lower() == "true"
+
+# 🚀 LIFESPAN / STARTUP EVENT (Preload Models to prevent first-request timeouts)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("🚀 Starting TNEA Counselor AI API...")
+    logger.info("🔄 Preloading ML models (this may take a minute on first deploy)...")
+    try:
+        # Importing these here triggers the model loading in your service files
+        from app.services.retrieval import embedding_model, reranker
+        from app.services.llm import genai_client 
+        from app.services.query_understanding import genai_client as understand_client
+        logger.info("✅ ML models and LLM clients loaded successfully!")
+    except Exception as e:
+        logger.warning(f"⚠️ Could not preload all models at startup: {e}")
+        logger.info("ℹ️ Models will be loaded lazily on the first request.")
+    
+    yield  # App runs here
+    
+    logger.info("👋 Shutting down TNEA Counselor AI API...")
 
 app = FastAPI(
     title="TN-Engineering Q/A System API",
     version="1.0-final",
-    description="AI Counselor for Tamil Nadu Engineering Colleges. Built for Frontend Integration."
+    description="AI Counselor for Tamil Nadu Engineering Colleges. Built for Frontend Integration.",
+    lifespan=lifespan
 )
 
-# 🚀 1. CORS MIDDLEWARE
+# 🚀 1. CORS MIDDLEWARE (Dynamic based on Environment)
+if IS_PRODUCTION:
+    # 🔒 In production, restrict origins to your actual frontend URLs
+    # Update these with Lekhana's actual deployed frontend URLs later!
+    allowed_origins = [
+        "https://your-frontend-app.vercel.app",
+        "https://your-frontend-app.onrender.com",
+        "http://localhost:3000",  # Keep localhost so she can test locally against the live API
+        "http://localhost:5173",  # Vite default port
+    ]
+else:
+    # 🛠️ In development, allow all
+    allowed_origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -44,7 +91,12 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 @app.get("/")
 def root():
-    return {"message": "TNEA Counselor AI API is running", "docs": "/docs", "health": "/health"}
+    return {
+        "message": "TNEA Counselor AI API is running", 
+        "docs": "/docs", 
+        "health": "/health",
+        "environment": "production" if IS_PRODUCTION else "development"
+    }
 
 @app.get("/health")
 def health():
@@ -55,7 +107,7 @@ def clear_chat(session_id: str):
     memory.clear_history(session_id)
     return {"status": "cleared", "session_id": session_id}
 
-# 🚀 HELPER: Smart Source Extraction (UPDATED FOR BRANCH ENRICHMENT)
+# 🚀 HELPER: Smart Source Extraction
 def extract_source_info(doc: dict) -> Source:
     meta = doc.get("metadata", {})
     doc_type = meta.get("doc_type", "general_info")
@@ -66,8 +118,6 @@ def extract_source_info(doc: dict) -> Source:
         district = "Tamil Nadu"
         
     elif doc_type == "branch_info":
-        # 🚀 CRITICAL FIX: Uses the enriched college_name from the Relational SQL JOIN!
-        # If enrichment worked, it shows the College Name. If not, it falls back to the Branch Code.
         college_name = meta.get("college_name", f"Branch: {meta.get('branch_code', 'Unknown')} (Code: {meta.get('tnea_code', 'N/A')})")
         tnea_code = str(meta.get("tnea_code", "N/A"))
         district = meta.get("district", "N/A")
@@ -114,7 +164,7 @@ def purge_cache(admin_secret: str):
         
     try:
         supabase.table("query_cache").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
-        logger.info("🚨 ADMIN ACTION: Semantic Cache completely purged due to data update.")
+        logger.info("🚨 ADMIN ACTION: Semantic cache completely purged due to data update.")
         return {"status": "success", "message": "Cache purged. AI will now fetch fresh data."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -132,6 +182,7 @@ def report_bad_answer(question: str):
 # 🚀 5. MAIN QUERY ENDPOINT
 @app.post("/query", response_model=QueryResponse)
 def query(req: QueryRequest):
+    start_time = time.time()  # ⏱️ Track execution time
     try:
         logger.info(f"[{req.session_id}] Query: {req.question}")
 
@@ -160,7 +211,7 @@ def query(req: QueryRequest):
                 memory.add_message(req.session_id, "model", cached_answer)
                 return format_cache_response(cached_response)
 
-        # 5) Agentic routing
+        # 5) Smart routing
         understood = understand_query(search_query)
         intent = understood.pop("intent", "search")
         compare_colleges = understood.pop("compare_colleges", None)
@@ -192,14 +243,18 @@ def query(req: QueryRequest):
         # 8) Smart Source Extraction
         sources = [extract_source_info(d) for d in docs]
 
-        # 9) Save to cache
-        save_to_cache(req.question, answer, [s.dict() for s in sources])
+        # 9) Save to cache (Pydantic V1/V2 compatible)
+        sources_dict = [s.model_dump() if hasattr(s, 'model_dump') else s.dict() for s in sources]
+        save_to_cache(req.question, answer, sources_dict)
         if search_query != req.question:
-            save_to_cache(search_query, answer, [s.dict() for s in sources])
+            save_to_cache(search_query, answer, sources_dict)
 
         # 10) Save to memory
         memory.add_message(req.session_id, "user", req.question)
         memory.add_message(req.session_id, "model", answer)
+
+        duration = time.time() - start_time
+        logger.info(f"✅ Query completed in {duration:.2f} seconds")
 
         return QueryResponse(answer=answer, sources=sources)
 
