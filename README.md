@@ -76,8 +76,6 @@ graph TD
     LLM --> SaveCache[Save to Cache<br/>7-day TTL]
     SaveCache --> Response
 
----
-
 ## 📁 Project Structure
 
 ```text
@@ -110,8 +108,8 @@ RAG-final/
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/YOUR_USERNAME/tnea-counselor-ai.git
-cd tnea-counselor-ai
+git clone https://github.com/sudhakargovindasamy/tnea-ai-counselor.git
+cd tnea-ai-counselor
 ```
 
 ### 2. Install Dependencies
@@ -307,4 +305,3 @@ This project is created for educational purposes as part of our internship progr
 ---
 
 *Built with ❤️ for Tamil Nadu Engineering Students*
-```
