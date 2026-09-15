@@ -8,7 +8,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, HTMLResponse
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
 load_dotenv()
 
 from app.models import QueryRequest, QueryResponse, Source
@@ -19,34 +18,49 @@ from app.services.memory import memory
 from app.services.semantic_cache import check_cache, save_to_cache
 from app.services.database import supabase
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-# 🚀 LIFESPAN / STARTUP EVENT (Preload Models & Verify DB)
+# 🛠️ FIX 5: Universal retry wrapper for ALL Gemini calls (rewrite + understand + generate)
+RETRY_TOKENS = ("429", "exhausted", "quota", "resource has been", "unavailable", "rate", "deadline")
+
+def _llm_retry(fn, *args, **kwargs):
+    last = None
+    for attempt in range(3):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as e:
+            last = e
+            msg = str(e).lower()
+            if attempt < 2 and any(t in msg for t in RETRY_TOKENS):
+                wait = 8 * (attempt + 1)
+                logger.warning(f"⏳ Rate-limited in {getattr(fn, '__name__', 'llm')}. Backoff {wait}s (attempt {attempt+1}/3)")
+                time.sleep(wait)
+            else:
+                raise
+    raise last
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 Starting TNEA Counselor AI API...")
     logger.info("🔄 Preloading ML models (this may take a minute on first deploy)...")
     try:
-        # Importing these triggers the model loading in your service files
         from app.services.retrieval import embedding_model, reranker
         logger.info("✅ ML models loaded successfully!")
     except Exception as e:
         logger.warning(f"⚠️ Could not preload models at startup: {e}")
         logger.info("ℹ️ Models will be loaded lazily on the first request.")
     
-    # Quick DB check to ensure credentials are valid
     try:
         supabase.table("documents").select("id").limit(1).execute()
         logger.info("✅ Supabase database connection verified.")
     except Exception as e:
         logger.error(f"❌ Supabase connection failed: {e}")
 
-    yield  # App runs here
+    yield 
     
     logger.info("👋 Shutting down TNEA Counselor AI API...")
 
@@ -57,8 +71,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# 🚀 1. CORS MIDDLEWARE
-# Kept wide open ["*"] so Lekhana can connect from localhost, Vercel, or anywhere without CORS headaches.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  
@@ -67,7 +79,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🚀 2. GLOBAL EXCEPTION HANDLER
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled Exception: {exc}", exc_info=True)
@@ -79,7 +90,6 @@ async def global_exception_handler(request: Request, exc: Exception):
         },
     )
 
-# 🚀 3. ROOT ENDPOINT (Beautiful UI for Hugging Face Spaces iframe)
 @app.get("/", response_class=HTMLResponse)
 def root():
     return """
@@ -103,7 +113,7 @@ def root():
         <div class="container">
             <span class="badge">🟢 API ONLINE</span>
             <h1>🎓 TNEA Counselor AI</h1>
-            <p>The backend API is running successfully on Hugging Face Spaces.</p>
+            <p>The backend API is running successfully.</p>
             <p>This is a headless API. Please use the interactive documentation below to test endpoints or connect your React frontend.</p>
             <div class="endpoints">
                 <strong>Available Routes:</strong><br>
@@ -125,7 +135,6 @@ def clear_chat(session_id: str):
     memory.clear_history(session_id)
     return {"status": "cleared", "session_id": session_id}
 
-# 🚀 HELPER: Smart Source Extraction
 def extract_source_info(doc: dict) -> Source:
     meta = doc.get("metadata", {})
     doc_type = meta.get("doc_type", "general_info")
@@ -159,7 +168,6 @@ def extract_source_info(doc: dict) -> Source:
         score=round(normalized_score, 4)
     )
 
-# 🚀 HELPER: Format Cache Response
 def format_cache_response(cached_response):
     if isinstance(cached_response, dict):
         cached_sources = [
@@ -172,7 +180,6 @@ def format_cache_response(cached_response):
     else:
         return QueryResponse(answer=str(cached_response), sources=[])
 
-# 🚀 4. ADMIN PURGE CACHE ENDPOINT
 @app.post("/admin/purge_cache")
 def purge_cache(admin_secret: str):
     expected_secret = os.getenv("ADMIN_SECRET_KEY", "TNEA_SUPER_SECRET_ADMIN_KEY_2026")
@@ -186,7 +193,6 @@ def purge_cache(admin_secret: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# 🚀 5. USER FEEDBACK ENDPOINT
 @app.post("/feedback/downvote")
 def report_bad_answer(question: str):
     try:
@@ -196,7 +202,6 @@ def report_bad_answer(question: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# 🚀 6. MAIN QUERY ENDPOINT
 @app.post("/query", response_model=QueryResponse)
 def query(req: QueryRequest):
     start_time = time.time()
@@ -215,8 +220,12 @@ def query(req: QueryRequest):
         # 2) Get Chat History
         history = memory.get_history(req.session_id)
 
-        # 3) HISTORY-AWARE QUERY TRANSLATION
-        search_query = rewrite_query(req.question, history) if history else req.question
+        # 3) HISTORY-AWARE QUERY TRANSLATION (Wrapped in universal retry)
+        try:
+            search_query = _llm_retry(rewrite_query, req.question, history) if history else req.question
+        except Exception as e:
+            logger.warning(f"⚠️ Query rewriting completely failed: {e}")
+            search_query = req.question
 
         # 4) Secondary Cache Check
         if search_query != req.question:
@@ -228,8 +237,13 @@ def query(req: QueryRequest):
                 memory.add_message(req.session_id, "model", cached_answer)
                 return format_cache_response(cached_response)
 
-        # 5) Smart routing
-        understood = understand_query(search_query)
+        # 5) Smart routing (Wrapped in universal retry)
+        try:
+            understood = _llm_retry(understand_query, search_query)
+        except Exception as e:
+            logger.warning(f"⚠️ Query understanding completely failed: {e}. Defaulting to search intent.")
+            understood = {"intent": "search", "filters": {}}
+
         intent = understood.pop("intent", "search")
         compare_colleges = understood.pop("compare_colleges", None)
         
@@ -254,13 +268,19 @@ def query(req: QueryRequest):
             memory.add_message(req.session_id, "model", safe_answer)
             return QueryResponse(answer=safe_answer, sources=[])
 
-        # 7) Generate
-        answer = generate_answer(req.question, context_data, req.session_id, reference_answer=None, intent=intent)
+        # 7) Generate Answer (with Graceful Degradation)
+        try:
+            answer = _llm_retry(generate_answer, req.question, context_data, req.session_id, 
+                               reference_answer=None, intent=intent)
+        except Exception as e:
+            logger.error(f"🚨 LLM Generation completely failed (Quota/Deprecation): {e}")
+            # Return a polite 200 response instead of crashing with a 500
+            answer = "I'm sorry, I'm currently experiencing high demand or technical difficulties. Please try again in a few minutes."
 
         # 8) Smart Source Extraction
         sources = [extract_source_info(d) for d in docs]
 
-        # 9) Save to cache (Pydantic V1/V2 compatible)
+        # 9) Save to cache 
         sources_dict = [s.model_dump() if hasattr(s, 'model_dump') else s.dict() for s in sources]
         save_to_cache(req.question, answer, sources_dict)
         if search_query != req.question:

@@ -12,8 +12,8 @@ client = genai.Client(api_key=GEMINI_API_KEY)
 FALLBACK_MODELS = [
     "gemini-3.5-flash",   # Primary: Confirmed working in your logs
     "gemini-3.6-flash",   # Secondary: Alternative working model
-    "gemini-2.5-pro",     # Tertiary: Pro fallback
-    "gemini-2.5-flash"    # Last resort
+    "gemini-1.5-pro",     # Tertiary: Pro fallback
+    "gemini-1.5-flash"    # Last resort
 ]
 
 def understand_query(question: str) -> dict:

@@ -1,6 +1,7 @@
 import logging
 import difflib
 import os
+import re
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from app.services.database import supabase
 
@@ -15,11 +16,11 @@ except Exception:
 logger = logging.getLogger(__name__)
 
 logger.info("Loading embedding model...")
-embedding_model = SentenceTransformer("BAAI/bge-large-en-v1.5")
+embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
 logger.info("Loading reranker...")
 reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
 
-QUERY_PREFIX = "Represent this sentence for searching relevant passages: "
+QUERY_PREFIX = ""
 
 # ═══════════════ 🧠 ALIAS DICTIONARY (EXACT CSV MATCHES) ═══════════════
 COLLEGE_ALIASES = {
@@ -68,6 +69,8 @@ def load_college_directory():
         logger.error(f"Failed to load college directory: {e}")
 
 def fuzzy_resolve_college(user_input: str) -> str:
+    if not user_input:
+        return None
     if not COLLEGE_DIRECTORY:
         load_college_directory()
     if not COLLEGE_DIRECTORY:
@@ -116,6 +119,25 @@ def fuzzy_resolve_college(user_input: str) -> str:
         logger.info(f"🧠 Fuzzy matched '{user_input}' to '{best_match}' (Score: {highest_score:.2f})")
         return best_match
     return None
+
+# ─────────────── 🛠️ FIX 2: FILTER NORMALIZER ───────────────
+def _normalize_filters(filters: dict) -> dict:
+    """Normalize filter keys/values to match what is actually stored in Supabase metadata."""
+    if not filters:
+        return {}
+    clean = {}
+    for k, v in filters.items():
+        if k == "district" and isinstance(v, str):
+            v = v.strip().title()  # "COIMBATORE" -> "Coimbatore"
+        elif k == "nba_accredited":
+            if isinstance(v, bool):
+                v = "Yes" if v else "No"
+            elif isinstance(v, str):
+                v = v.strip().title()
+        elif k in ("tnea_code", "branch_code"):
+            v = str(v).strip()
+        clean[k] = v
+    return clean
 
 # ─────────────── XML FORMATTING ───────────────
 def format_context_xml(docs):
@@ -172,6 +194,9 @@ Rewritten Question:"""
 
 # ─────────────── SMART ENTITY LOOKUP ───────────────
 def entity_lookup(college_name: str, limit: int = 15):
+    if not college_name or not str(college_name).strip():
+        return []
+        
     search_terms = college_name.lower()
     stopwords = ["engineering", "college", "technology", "institute", "of", "and", "autonomous", "the", "for"]
     for word in stopwords:
@@ -222,12 +247,7 @@ def entity_lookup(college_name: str, limit: int = 15):
         return []
 
 def get_branches_by_filters(district: str = None, branch_code: str = None, nba_required: str = None, limit: int = 10):
-    """
-    Direct SQL fetch for branch_info documents based on structured filters.
-    Enriches branch data with college names so the LLM and Source Cards work perfectly.
-    """
     try:
-        # 1. Fetch Branches
         q = supabase.table("documents").select("id, content, metadata").eq("metadata->>doc_type", "branch_info")
         if branch_code:
             q = q.ilike("metadata->>branch_code", f"%{branch_code}%")
@@ -239,7 +259,6 @@ def get_branches_by_filters(district: str = None, branch_code: str = None, nba_r
         if not res.data:
             return []
 
-        # 2. Filter by District (if provided)
         if district:
             dist_res = supabase.table("documents").select("metadata").eq("metadata->>doc_type", "college_info").ilike("metadata->>district", f"%{district}%").execute()
             district_codes = set(str(r["metadata"].get("tnea_code")) for r in dist_res.data if r["metadata"].get("tnea_code"))
@@ -250,7 +269,6 @@ def get_branches_by_filters(district: str = None, branch_code: str = None, nba_r
         if not filtered_docs:
             return []
 
-        # 3. 🧠 BULLETPROOF ENRICHMENT (The Relational Join)
         all_colleges_res = supabase.table("documents").select("metadata").eq("metadata->>doc_type", "college_info").execute()
         college_map = {str(r["metadata"].get("tnea_code")): r["metadata"] for r in all_colleges_res.data if r["metadata"].get("tnea_code")}
         
@@ -260,7 +278,6 @@ def get_branches_by_filters(district: str = None, branch_code: str = None, nba_r
                 info = college_map[tc]
                 doc["metadata"]["college_name"] = info.get("college_name", "Unknown College")
                 doc["metadata"]["district"] = info.get("district", "Unknown District")
-                # Prepend college name to content so the LLM context is complete
                 doc["content"] = f"college_name: {info.get('college_name')}\n" + doc.get("content", "")
 
         return filtered_docs[:limit]
@@ -269,7 +286,6 @@ def get_branches_by_filters(district: str = None, branch_code: str = None, nba_r
         logger.error(f"Direct SQL branch fetch failed: {e}", exc_info=True)
         return []
 
-# ─────────────── NUMERICAL (pass percentage) ───────────────
 def get_top_by_pass_percentage(top_k, district=None):
     try:
         q = (supabase.table("performance")
@@ -282,8 +298,10 @@ def get_top_by_pass_percentage(top_k, district=None):
     except Exception:
         return [] 
 
-# ─────────────── COMPARISON MODE ───────────────
 def retrieve_for_comparison(college_names, top_k=5):
+    if not college_names:
+        return None, "Please tell me which colleges you would like to compare."
+        
     all_docs = []
     for name in college_names:
         docs = entity_lookup(name, limit=5)
@@ -301,10 +319,20 @@ def retrieve_for_comparison(college_names, top_k=5):
 def retrieve(query: str, top_k: int = 5, filters: dict = None,
              compare_colleges: list = None, intent: str = "search", chat_history: list = None):
 
+    # 🛠️ FIX 2: Normalize filters immediately upon entry
+    filters = _normalize_filters(filters)
+
     # 0) QUERY REWRITING 
     query = rewrite_query_with_history(query, chat_history)
 
     active_filters = dict(filters) if filters else {}
+
+    # 🛠️ FIX 2: FALLBACK ENTITY EXTRACTION (Catches typos if LLM query understanding fails)
+    if not active_filters.get("college_name") and not compare_colleges:
+        resolved_fallback = fuzzy_resolve_college(query)
+        if resolved_fallback:
+            logger.info(f"🧠 Fallback fuzzy match extracted college: '{resolved_fallback}'")
+            active_filters["college_name"] = resolved_fallback
 
     if not compare_colleges:
         compare_colleges = active_filters.pop("compare_colleges", None)
@@ -350,42 +378,39 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
     query_lower = query.lower()
     table_name = "documents"
     
-    # Extract structured filters
     district_filter = active_filters.get("district")
     branch_code_filter = active_filters.get("branch_code")
     nba_filter = active_filters.get("nba_accredited")
 
-    is_branch_query = any(w in query_lower for w in ["branch", "intake", "cse", "cs", "mechanical", "me", "ece", "ec", "nba", "seat", "course", "computer science"]) or branch_code_filter or nba_filter
+    # 🛠️ FIX 1: Regex word boundaries (\b) prevent "ec" from matching "technology"
+    branch_keywords = r"\b(branch|intake|cse|cs|mechanical|me|ece|ec|nba|seat|course|computer science)\b"
+    is_branch_query = bool(re.search(branch_keywords, query_lower)) or branch_code_filter or nba_filter
     
     if is_branch_query:
         logger.info("🎯 Routing to: branch_info (Direct SQL)")
-        # Use Direct SQL for structured data to bypass vector similarity thresholds!
         sql_docs = get_branches_by_filters(
             district=district_filter, 
             branch_code=branch_code_filter, 
             nba_required=nba_filter, 
-            limit=top_k
+            limit=top_k * 2
         )
-        
         if sql_docs:
-            logger.info(f"✅ Direct SQL found {len(sql_docs)} exact branch matches")
             for c in sql_docs:
-                c["similarity"] = 1.0
                 c["rerank_score"] = 10.0
+            # 🛠️ FIX: Slice down to exact top_k requested by user
+            sql_docs = sql_docs[:top_k]
             return sql_docs, format_context_xml(sql_docs)
-        else:
-            logger.info("⚠️ Direct SQL found 0 matches. Falling back to vector search...")
-            active_filters["doc_type"] = "branch_info"
-            
-    elif any(w in query_lower for w in ["hostel", "fee", "placement", "transport", "mess", "rent", "principal", "address", "autonomous"]):
+        # If SQL returns nothing, fall through to vector search
+        
+    elif re.search(r"\b(hostel|fee|placement|transport|mess|rent|principal|address|autonomous)\b", query_lower):
         active_filters["doc_type"] = "college_info"
         logger.info("🎯 Routing to: college_info")
-    elif any(w in query_lower for w in ["reservation", "counselling", "eligibility", "native", "certificate", "tnea rule", "first graduate", "community", "oc", "bc", "mbc"]):
+        
+    elif re.search(r"\b(reservation|counselling|eligibility|native|certificate|tnea rule|first graduate|community|oc|bc|mbc)\b", query_lower):
         table_name = "admission_documents"
         logger.info("🎯 Routing to: admission_documents")
 
-    # 5) VECTOR SEARCH (Fallback for branches, or primary for other doc types)
-    # Clean up filters that Supabase RPC might not understand or we already handled via SQL
+    # 5) VECTOR SEARCH 
     active_filters.pop("branch_code", None)
     active_filters.pop("nba_accredited", None)
     active_filters.pop("district", None) 
