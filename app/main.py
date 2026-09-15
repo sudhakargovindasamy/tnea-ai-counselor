@@ -46,14 +46,10 @@ def _llm_retry(fn, *args, **kwargs):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 Starting TNEA Counselor AI API...")
-    logger.info("🔄 Preloading ML models (this may take a minute on first deploy)...")
-    try:
-        from app.services.retrieval import embedding_model, reranker
-        logger.info("✅ ML models loaded successfully!")
-    except Exception as e:
-        logger.warning(f"⚠️ Could not preload models at startup: {e}")
-        logger.info("ℹ️ Models will be loaded lazily on the first request.")
+    # ✅ REMOVED: Model preloading to save 512MB RAM limit
+    logger.info("ℹ️ Models will be loaded lazily on first request (memory optimization).")
     
+    # Quick DB check to ensure credentials are valid
     try:
         supabase.table("documents").select("id").limit(1).execute()
         logger.info("✅ Supabase database connection verified.")

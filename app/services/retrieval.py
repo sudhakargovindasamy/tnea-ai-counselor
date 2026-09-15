@@ -2,6 +2,7 @@ import logging
 import difflib
 import os
 import re
+import gc  # 🛠️ Added for aggressive garbage collection
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from app.services.database import supabase
 
@@ -15,10 +16,22 @@ except Exception:
 
 logger = logging.getLogger(__name__)
 
-logger.info("Loading embedding model...")
-embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
-logger.info("Loading reranker...")
-reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+# ═══════════════ 🧠 LAZY LOADING (Fixes Render 512MB OOM Crash) ═══════════════
+embedding_model = None
+reranker = None
+
+def _load_models():
+    global embedding_model, reranker
+    if embedding_model is None:
+        logger.info("🧠 Loading embedding model (first request)...")
+        embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+        logger.info("✅ Embedding model loaded.")
+    if reranker is None:
+        logger.info("🧠 Loading reranker (first request)...")
+        reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+        logger.info("✅ Reranker loaded.")
+        gc.collect()  # Force garbage collection to free memory
+        logger.info("🧹 Garbage collection complete.")
 
 QUERY_PREFIX = ""
 
@@ -183,7 +196,8 @@ Current Question: {current_question}
 Rewritten Question:"""
 
     try:
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        # 🛠️ FIX: Updated to gemini-2.0-flash to prevent 404 Not Found errors
+        model = genai.GenerativeModel("gemini-2.0-flash")
         response = model.generate_content(prompt)
         rewritten = response.text.strip().strip('"')
         logger.info(f"🧠 Query Rewritten: '{current_question}' -> '{rewritten}'")
@@ -318,6 +332,9 @@ def retrieve_for_comparison(college_names, top_k=5):
 # ─────────────── MAIN RETRIEVE ───────────────
 def retrieve(query: str, top_k: int = 5, filters: dict = None,
              compare_colleges: list = None, intent: str = "search", chat_history: list = None):
+
+    # 🛠️ FIX: Ensure models are loaded lazily on first request to prevent OOM crash
+    _load_models()
 
     # 🛠️ FIX 2: Normalize filters immediately upon entry
     filters = _normalize_filters(filters)
