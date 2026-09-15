@@ -1,22 +1,27 @@
 import json
 import re
+import os
 import logging
-from google import genai
-from google.genai import errors
-from app.config import GEMINI_API_KEY
 
 logger = logging.getLogger(__name__)
-client = genai.Client(api_key=GEMINI_API_KEY)
 
-# 🚀 Production Fallback Chain (Prioritize working models)
+# 🚀 Production Fallback Chain (Updated to bypass 404 Deprecation errors)
 FALLBACK_MODELS = [
-    "gemini-3.5-flash",   # Primary: Confirmed working in your logs
-    "gemini-3.6-flash",   # Secondary: Alternative working model
-    "gemini-1.5-pro",     # Tertiary: Pro fallback
-    "gemini-1.5-flash"    # Last resort
+    "gemini-2.0-flash",         # Primary: Most reliable free-tier model currently
+    "gemini-1.5-flash-latest",  # Secondary: Valid 1.5 endpoint
+    "gemini-3.5-flash",         # Tertiary: Experimental fallback
+    "gemini-3.6-flash"          # Quaternary: Experimental fallback
 ]
 
 def understand_query(question: str) -> dict:
+    # 🛠️ FIX 1: Strict Lazy Imports (Prevents 512MB Render OOM crash on startup)
+    # Google libs load ONLY when a query actually arrives.
+    from google import genai
+    from google.genai import errors
+    
+    api_key = os.getenv("GEMINI_API_KEY")
+    client = genai.Client(api_key=api_key)
+
     prompt = f"""You are an expert query router for Tamil Nadu Engineering colleges.
 Analyze the student's question and extract intent and filters.
 
@@ -85,6 +90,13 @@ JSON:"""
 def rewrite_query(current_question: str, history: list) -> str:
     if not history:
         return current_question
+
+    # 🛠️ FIX 1: Strict Lazy Imports
+    from google import genai
+    from google.genai import errors
+    
+    api_key = os.getenv("GEMINI_API_KEY")
+    client = genai.Client(api_key=api_key)
         
     recent_history = history[-4:] if len(history) > 4 else history
     

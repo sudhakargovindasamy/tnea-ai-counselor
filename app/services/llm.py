@@ -1,19 +1,15 @@
 import logging
-from google import genai
-from google.genai import types
-from google.genai import errors
-from app.config import GEMINI_API_KEY
+import os
 from app.services.memory import memory
 
 logger = logging.getLogger(__name__)
-client = genai.Client(api_key=GEMINI_API_KEY)
 
-# 🚀 Production Fallback Chain (Prioritize working models)
+# 🚀 Production Fallback Chain (Updated to bypass 404 Deprecation errors)
 FALLBACK_MODELS = [
-    "gemini-3.5-flash",   # Primary: Confirmed working in your logs
-    "gemini-3.6-flash",   # Secondary: Alternative working model
-    "gemini-1.5-pro",     # Tertiary: Pro fallback
-    "gemini-1.5-flash"    # Last resort (may not work for new users)
+    "gemini-2.0-flash",         # Primary: Most reliable free-tier model currently
+    "gemini-1.5-flash-latest",  # Secondary: Valid 1.5 endpoint
+    "gemini-3.5-flash",         # Tertiary: Experimental fallback
+    "gemini-3.6-flash"          # Quaternary: Experimental fallback
 ]
 
 SYSTEM_PROMPT = """You are an expert AI counselor for Tamil Nadu Engineering Colleges (TNEA).
@@ -28,6 +24,16 @@ You must answer the student's question using ONLY the provided <knowledge_base> 
 
 def generate_answer(question: str, xml_context: str, session_id: str,
                     reference_answer: str = None, intent: str = "search") -> str:
+
+    # 🛠️ FIX 1: Strict Lazy Imports (Prevents 512MB Render OOM crash on startup)
+    # PyTorch and Google libs load ONLY when a query actually arrives.
+    from google import genai
+    from google.genai import types
+    from google.genai import errors
+    
+    # Initialize client lazily inside the function
+    api_key = os.getenv("GEMINI_API_KEY")
+    client = genai.Client(api_key=api_key)
 
     history = memory.get_history(session_id)
 

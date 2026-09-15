@@ -3,31 +3,26 @@ import difflib
 import os
 import re
 import gc  # 🛠️ Added for aggressive garbage collection
-from sentence_transformers import SentenceTransformer, CrossEncoder
 from app.services.database import supabase
-
-# Optional Gemini integration for Query Rewriting (Fixes the "there" memory leak)
-try:
-    import google.generativeai as genai
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-    GEMINI_AVAILABLE = True
-except Exception:
-    GEMINI_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
-# ═══════════════ 🧠 LAZY LOADING (Fixes Render 512MB OOM Crash) ═══════════════
+# ═══════════════ 🧠 STRICT LAZY LOADING (Crucial for 512MB Render Limit) ═══════════════
+# NO heavy imports at the top level. PyTorch and Google libs load ONLY when a query arrives.
 embedding_model = None
 reranker = None
+GEMINI_AVAILABLE = False
 
 def _load_models():
     global embedding_model, reranker
     if embedding_model is None:
         logger.info("🧠 Loading embedding model (first request)...")
+        from sentence_transformers import SentenceTransformer, CrossEncoder  # 🛠️ Lazy import
         embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
         logger.info("✅ Embedding model loaded.")
     if reranker is None:
         logger.info("🧠 Loading reranker (first request)...")
+        from sentence_transformers import SentenceTransformer, CrossEncoder  # 🛠️ Lazy import
         reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
         logger.info("✅ Reranker loaded.")
         gc.collect()  # Force garbage collection to free memory
@@ -173,8 +168,18 @@ def reorder_for_llm(docs):
 
 # ─────────────── QUERY REWRITER ───────────────
 def rewrite_query_with_history(current_question: str, chat_history: list) -> str:
-    if not chat_history or not GEMINI_AVAILABLE:
+    global GEMINI_AVAILABLE
+    if not chat_history:
         return current_question
+
+    # 🛠️ Lazy configure Gemini ONLY if a query actually needs it
+    if not GEMINI_AVAILABLE:
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+            GEMINI_AVAILABLE = True
+        except Exception:
+            return current_question
 
     pronouns = ["there", "it", "that college", "this college", "they", "its", "those"]
     if not any(p in current_question.lower() for p in pronouns):
@@ -196,6 +201,7 @@ Current Question: {current_question}
 Rewritten Question:"""
 
     try:
+        import google.generativeai as genai  # 🛠️ Local import
         # 🛠️ FIX: Updated to gemini-2.0-flash to prevent 404 Not Found errors
         model = genai.GenerativeModel("gemini-2.0-flash")
         response = model.generate_content(prompt)
