@@ -1,16 +1,30 @@
 import logging
 from typing import Optional, Dict, Any
 from datetime import datetime, timedelta
-from sentence_transformers import SentenceTransformer
 from app.services.database import supabase
 
 logger = logging.getLogger(__name__)
-embedding_model = SentenceTransformer("BAAI/bge-large-en-v1.5")
+
+# 🧠 LAZY LOADING: Model loads on first cache call, not at import time
+# Shares the SAME model instance as retrieval.py to avoid double memory usage
+embedding_model = None
 CACHE_THRESHOLD = 0.92
+
+def _get_embedding_model():
+    """Lazily load the embedding model, reusing retrieval.py's instance to save RAM."""
+    global embedding_model
+    if embedding_model is None:
+        # 🚀 Reuse the model already loaded by retrieval.py (zero extra memory!)
+        from app.services.retrieval import embedding_model as retrieval_model, _load_models
+        _load_models()  # Ensure retrieval's model is loaded first
+        embedding_model = retrieval_model
+        logger.info("✅ Cache embedding model ready (shared with retrieval).")
+    return embedding_model
 
 def check_cache(question: str) -> Optional[Dict[str, Any]]:
     try:
-        emb = embedding_model.encode(question, normalize_embeddings=True).tolist()
+        model = _get_embedding_model()
+        emb = model.encode(question, normalize_embeddings=True).tolist()
         resp = supabase.rpc("match_cache", {
             "query_embedding": emb,
             "match_threshold": CACHE_THRESHOLD,
@@ -43,7 +57,8 @@ def save_to_cache(question: str, answer: str, sources: list):
         return
 
     try:
-        emb = embedding_model.encode(question, normalize_embeddings=True).tolist()
+        model = _get_embedding_model()
+        emb = model.encode(question, normalize_embeddings=True).tolist()
         
         clean_sources = []
         for s in sources:
@@ -68,6 +83,6 @@ def save_to_cache(question: str, answer: str, sources: list):
     except Exception as e:
         err_str = str(e).lower()
         if "duplicate key" in err_str or "unique constraint" in err_str:
-            pass # Ignore duplicates silently
+            pass  # Ignore duplicates silently
         else:
             logger.warning(f"⚠️ Cache save failed: {e}")
