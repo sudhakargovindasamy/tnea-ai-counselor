@@ -26,7 +26,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 🛠️ FIX 5: Universal retry wrapper for ALL Gemini calls
+# 🛠️ Universal retry wrapper for ALL Gemini calls
 RETRY_TOKENS = ("429", "exhausted", "quota", "resource has been", "unavailable", "rate", "deadline")
 
 def _llm_retry(fn, *args, **kwargs):
@@ -38,7 +38,7 @@ def _llm_retry(fn, *args, **kwargs):
             last = e
             msg = str(e).lower()
             if attempt < 2 and any(t in msg for t in RETRY_TOKENS):
-                wait = 2 * (attempt + 1)  # Reduced to prevent Render 504 Gateway Timeouts
+                wait = 2 * (attempt + 1)
                 logger.warning(f"⏳ Rate-limited in {getattr(fn, '__name__', 'llm')}. Backoff {wait}s (attempt {attempt+1}/3)")
                 time.sleep(wait)
             else:
@@ -50,7 +50,6 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 Starting TNEA Counselor AI API...")
     logger.info("ℹ️ Models will be loaded lazily on first request (memory optimization).")
     
-    # Quick DB check to ensure credentials are valid
     try:
         supabase.table("documents").select("id").limit(1).execute()
         logger.info("✅ Supabase database connection verified.")
@@ -76,11 +75,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🛠️ Request timeout middleware to prevent 502 errors on Render
 @app.middleware("http")
 async def timeout_middleware(request: Request, call_next):
     try:
-        # Set a 60-second timeout for all requests
         response = await asyncio.wait_for(call_next(request), timeout=60.0)
         return response
     except asyncio.TimeoutError:
@@ -254,22 +251,32 @@ def report_bad_answer(question: str):
 @app.post("/query", response_model=QueryResponse)
 def query(req: QueryRequest):
     start_time = time.time()
+    cache_used = False
+    intent_detected = "unknown"
+    
     try:
         logger.info(f"[{req.session_id}] Query: {req.question}")
 
         # 1) Fast-path Semantic Cache
         cached_response = check_cache(req.question)
         if cached_response:
+            cache_used = True
             logger.info("⚡ Cache HIT! Serving from Semantic Cache (0 LLM calls)")
             cached_answer = cached_response.get("answer", "") if isinstance(cached_response, dict) else str(cached_response)
             memory.add_message(req.session_id, "user", req.question)
             memory.add_message(req.session_id, "model", cached_answer)
-            return format_cache_response(cached_response)
+            
+            duration = time.time() - start_time
+            logger.info(f"✅ Cache response in {duration:.2f}s")
+            
+            response = format_cache_response(cached_response)
+            # Add metadata to response (if your QueryResponse model supports it)
+            return response
 
         # 2) Get Chat History
         history = memory.get_history(req.session_id)
 
-        # 3) HISTORY-AWARE QUERY TRANSLATION (Wrapped in universal retry)
+        # 3) HISTORY-AWARE QUERY TRANSLATION
         try:
             search_query = _llm_retry(rewrite_query, req.question, history) if history else req.question
         except Exception as e:
@@ -280,13 +287,17 @@ def query(req: QueryRequest):
         if search_query != req.question:
             cached_response = check_cache(search_query)
             if cached_response:
+                cache_used = True
                 logger.info("⚡ Cache HIT on Rewritten Query!")
                 cached_answer = cached_response.get("answer", "") if isinstance(cached_response, dict) else str(cached_response)
                 memory.add_message(req.session_id, "user", req.question)
                 memory.add_message(req.session_id, "model", cached_answer)
+                
+                duration = time.time() - start_time
+                logger.info(f"✅ Cache response (rewritten) in {duration:.2f}s")
                 return format_cache_response(cached_response)
 
-        # 5) Smart routing (Wrapped in universal retry)
+        # 5) Smart routing
         try:
             understood = _llm_retry(understand_query, search_query)
         except Exception as e:
@@ -294,17 +305,22 @@ def query(req: QueryRequest):
             understood = {"intent": "search"}
 
         intent = understood.pop("intent", "search")
+        intent_detected = intent
+        logger.info(f"🎯 Intent detected: {intent}")
         
-        # 🛠️ Map new Pydantic intents ("list", "filter") to existing retrieval routes
-        if intent in ["list", "filter"]:
-            intent = "search"
+        # Map new Pydantic intents to existing retrieval routes
+        if intent in ["list", "filter", "cutoff"]:
+            # cutoff is handled specially in retrieval.py
+            if intent != "cutoff":
+                intent = "search"
             
         compare_colleges = understood.pop("compare_colleges", None)
         
-        # 🛠️ The updated understand_query returns a flat dict of filters (district, branch_code, etc.)
-        # We merge them directly into active_filters, overriding empty frontend filters
+        # Merge extracted filters into active_filters
         active_filters = req.filters.copy() if req.filters else {}
         active_filters.update(understood)
+        
+        logger.info(f"🔍 Active filters: {active_filters}")
 
         # 6) Retrieve
         docs, context_data = retrieve(
@@ -312,15 +328,18 @@ def query(req: QueryRequest):
             compare_colleges=compare_colleges, intent=intent, chat_history=history
         )
 
-        # 🚨 CRITICAL GUARDRAIL: Block LLM if retrieval fails
+        # CRITICAL GUARDRAIL: Block LLM if retrieval fails
         if not docs:
             logger.warning("⚠️ No documents retrieved. Blocking LLM to prevent hallucination.")
             safe_answer = context_data if isinstance(context_data, str) else "I don't have enough specific information in my database to answer this accurately."
             memory.add_message(req.session_id, "user", req.question)
             memory.add_message(req.session_id, "model", safe_answer)
+            
+            duration = time.time() - start_time
+            logger.info(f"✅ No-data response in {duration:.2f}s")
             return QueryResponse(answer=safe_answer, sources=[])
 
-        # 7) Generate Answer (with Graceful Degradation)
+        # 7) Generate Answer
         try:
             answer = _llm_retry(generate_answer, req.question, context_data, req.session_id, 
                                reference_answer=None, intent=intent)
@@ -343,7 +362,7 @@ def query(req: QueryRequest):
         memory.add_message(req.session_id, "model", answer)
 
         duration = time.time() - start_time
-        logger.info(f"✅ Query completed in {duration:.2f} seconds")
+        logger.info(f"✅ Query completed in {duration:.2f}s | Intent: {intent_detected} | Sources: {len(sources)}")
 
         return QueryResponse(answer=answer, sources=sources)
 
