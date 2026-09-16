@@ -1,15 +1,17 @@
 import logging
 import os
+from typing import Optional, List, Dict, Any
 from app.services.memory import memory
 
 logger = logging.getLogger(__name__)
 
-# 🚀 Production Fallback Chain (Based on what actually works in your logs)
+# 🚀 Production Fallback Chain 
+# Note: Ensure these model names match the exact strings supported by your google-genai SDK version.
 FALLBACK_MODELS = [
-    "gemini-3.6-flash",         # Primary: Confirmed working
-    "gemini-3.5-flash",         # Secondary: Works but hits quota
-    "gemini-2.0-flash",         # Tertiary: Try anyway
-    "gemini-1.5-flash-latest"   # Last resort
+    "gemini-2.0-flash",         # Primary: Latest stable fast model
+    "gemini-1.5-flash-latest",  # Secondary: Highly reliable fallback
+    "gemini-1.5-pro-latest",    # Tertiary: Higher reasoning if flash fails
+    "gemini-1.0-pro"            # Last resort legacy
 ]
 
 SYSTEM_PROMPT = """You are an expert AI counselor for Tamil Nadu Engineering Colleges (TNEA).
@@ -38,34 +40,77 @@ You must answer the student's question using ONLY the provided <knowledge_base> 
 INSTRUCTION: If the context shows a college has branch code "AD", and the student asks if it offers "Artificial Intelligence and Data Science", you MUST answer YES. Treat the codes and full names as identical.
 """
 
-def generate_answer(question: str, xml_context: str, session_id: str,
-                    reference_answer: str = None, intent: str = "search") -> str:
+def format_history_for_gemini(history: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+    """
+    Converts standard OpenAI-style memory history [{"role": "user", "content": "..."}]
+    to Google GenAI SDK format [{"role": "user", "parts": [{"text": "..."}]}].
+    """
+    if not history:
+        return []
+        
+    formatted = []
+    for msg in history:
+        role = msg.get("role")
+        content = msg.get("content")
+        
+        # Google SDK uses 'model' instead of 'assistant'
+        if role == "assistant":
+            role = "model"
+            
+        if role in ["user", "model"] and content:
+            formatted.append({
+                "role": role,
+                "parts": [{"text": content}]
+            })
+    return formatted
+
+def generate_answer(
+    question: str, 
+    xml_context: str, 
+    session_id: str,
+    reference_answer: Optional[str] = None, 
+    intent: str = "search"
+) -> str:
 
     # 🛠️ FIX 1: Strict Lazy Imports (Prevents 512MB Render OOM crash on startup)
-    # PyTorch and Google libs load ONLY when a query actually arrives.
     from google import genai
     from google.genai import types
     from google.genai import errors
     
-    # Initialize client lazily inside the function
     api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY is not set in environment variables.")
+        
     client = genai.Client(api_key=api_key)
 
-    history = memory.get_history(session_id)
+    # Fetch and format history
+    raw_history = memory.get_history(session_id) or []
+    history = format_history_for_gemini(raw_history)
 
+    # Build Context & System Instruction
     if reference_answer:
-        context_block = (f"REFERENCE ANSWER (from a previous similar question):\n{reference_answer}\n\n"
-                         f"CURRENT KNOWLEDGE BASE:\n{xml_context}")
+        context_block = (
+            f"REFERENCE ANSWER (from a previous similar question):\n{reference_answer}\n\n"
+            f"CURRENT KNOWLEDGE BASE:\n{xml_context}"
+        )
         system_instruction = SYSTEM_PROMPT + (
             "\n\nADDITIONAL: A similar question was asked before and a reference answer is provided. "
             "Analyze it against the current knowledge base. Generate a FRESH, natural response. "
-            "Do not copy it verbatim; rephrase and improve it using the current XML context.")
+            "Do not copy it verbatim; rephrase and improve it using the current XML context."
+        )
     else:
         context_block = f"CONTEXT:\n{xml_context}"
         system_instruction = SYSTEM_PROMPT
 
     user_message = f"{context_block}\n\nSTUDENT QUESTION: {question}"
     
+    # Generation Config (Low temperature is CRITICAL for RAG to prevent hallucinations)
+    gen_config = types.GenerateContentConfig(
+        system_instruction=system_instruction,
+        temperature=0.1, 
+        max_output_tokens=1024,
+    )
+
     last_error = None
 
     for model in FALLBACK_MODELS:
@@ -75,33 +120,41 @@ def generate_answer(question: str, xml_context: str, session_id: str,
             chat = client.chats.create(
                 model=model,
                 history=history,
-                config=types.GenerateContentConfig(system_instruction=system_instruction)
+                config=gen_config
             )
             response = chat.send_message(user_message)
-            answer = response.text
             
+            # Handle potential empty responses (happens if Gemini blocks prompt due to safety filters)
+            if not response.text:
+                logger.warning(f"⚠️ Empty response from {model}. Prompt might be blocked by safety filters.")
+                raise ValueError("Empty response generated by model.")
+                
+            answer = response.text
             logger.info(f"✅ Success with {model}")
 
-            # Save only the question to memory (not the huge XML context)
+            # Save only the question and answer to memory (not the huge XML context)
             memory.add_message(session_id, "user", question)
-            memory.add_message(session_id, "model", answer)
+            memory.add_message(session_id, "assistant", answer) # Use 'assistant' for standard memory schemas
+            
             return answer
             
         except errors.ClientError as e:
-            # 🚀 FIX: Handle BOTH 429 (rate limit) AND 404 (model not found) errors
-            if e.code in [429, 404]:
-                logger.warning(f"⚠️ {e.code} Error on {model}: {e.message}. Auto-switching to fallback...")
+            # Handle 429 (rate limit), 404 (model not found), 400 (bad request)
+            error_code = getattr(e, 'code', getattr(e, 'status_code', 500))
+            if error_code in [429, 404, 400]:
+                logger.warning(f"⚠️ {error_code} Error on {model}: {e}. Auto-switching to fallback...")
                 last_error = e
-                continue  # Automatically try the next model in the chain
+                continue
             else:
                 logger.error(f"❌ Client Error on {model}: {e}")
-                raise e
+                last_error = e
+                break # Break on non-retryable client errors like 403 Forbidden
                 
         except Exception as e:
             logger.error(f"❌ Unexpected Error on {model}: {e}")
             last_error = e
             continue
 
-    # If all models fail
+    # If all models fail, return a graceful message instead of crashing the FastAPI server
     logger.error(f"🚨 All fallback models exhausted for Generation. Last error: {last_error}")
-    raise last_error
+    return "I am currently experiencing technical difficulties connecting to the AI counselor. Please try again in a few moments."
