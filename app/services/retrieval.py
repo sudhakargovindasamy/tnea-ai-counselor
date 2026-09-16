@@ -19,7 +19,6 @@ def _load_models():
     if embedding_model is None:
         logger.info("🧠 Loading embedding model (first request)...")
         from sentence_transformers import SentenceTransformer
-        # Using device='cpu' explicitly prevents accidental GPU memory allocation attempts
         embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", device="cpu")
         logger.info("✅ Embedding model loaded.")
         
@@ -28,8 +27,6 @@ def _load_models():
         from sentence_transformers import CrossEncoder
         reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", device="cpu")
         logger.info("✅ Reranker loaded.")
-        
-        # 🛠️ CRITICAL: Aggressive memory cleanup after loading ~160MB of models
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -38,7 +35,6 @@ def _load_models():
 QUERY_PREFIX = ""
 
 # ═══════════════ 🧠 ALIAS DICTIONARY (EXACT CSV MATCHES) ═══════════════
-# Fixed typos in original aliases (e.g., "Enginering" -> "Engineering")
 COLLEGE_ALIASES = {
     "ceg": "University Departments of Anna University , Chennai - CEG Campus",
     "mit": "University Departments of Anna University , Chennai - MIT Campus",
@@ -65,19 +61,17 @@ COLLEGE_ALIASES = {
 }
 
 # ═══════════════ 🚀 GLOBAL CACHES (Crucial for 512MB Limit) ═══════════════
-# These load ONCE per worker lifecycle, eliminating repeated DB fetches.
-_COLLEGE_MAP_CACHE: Dict[str, Dict] = {}       # tnea_code -> metadata
-_COLLEGE_DIR_CACHE: Dict[str, str] = {}        # lower_name -> exact_name
-_COLLEGE_DIR_CLEAN_CACHE: Dict[str, str] = {}  # lower_name -> cleaned_name
+_COLLEGE_MAP_CACHE: Dict[str, Dict] = {}
+_COLLEGE_DIR_CACHE: Dict[str, str] = {}
+_COLLEGE_DIR_CLEAN_CACHE: Dict[str, str] = {}
 
 def _load_college_caches():
     global _COLLEGE_MAP_CACHE, _COLLEGE_DIR_CACHE, _COLLEGE_DIR_CLEAN_CACHE
     if _COLLEGE_MAP_CACHE:
-        return  # Already loaded
+        return
         
     try:
         logger.info("🔄 Warming up college caches...")
-        # 🛠️ FIX: Only fetch college_info, not all documents!
         res = supabase.table("documents").select("metadata").eq("metadata->>doc_type", "college_info").execute()
         
         stopwords = {"engineering", "college", "technology", "institute", "of", "and", 
@@ -93,7 +87,6 @@ def _load_college_caches():
                 name_lower = name.lower()
                 _COLLEGE_DIR_CACHE[name_lower] = name
                 
-                # Pre-compute cleaned names for ultra-fast fuzzy matching
                 clean_name = name_lower
                 for word in stopwords:
                     clean_name = clean_name.replace(word, "")
@@ -130,11 +123,9 @@ def fuzzy_resolve_college(user_input: str) -> Optional[str]:
     best_match = None
     highest_score = 0.0
     
-    # 🛠️ OPTIMIZATION: Iterate over pre-computed clean cache
     for db_name_lower, clean_db in _COLLEGE_DIR_CLEAN_CACHE.items():
         db_nospace = clean_db.replace(" ", "")
         
-        # Fast-path substring check
         if len(input_nospace) >= 4 and (input_nospace in db_nospace or db_nospace in input_nospace):
             return _COLLEGE_DIR_CACHE[db_name_lower]
             
@@ -169,6 +160,95 @@ def _normalize_filters(filters: dict) -> dict:
             v = str(v).strip()
         clean[k] = v
     return clean
+
+# ─────────────── 🆕 DEDUPLICATION FUNCTION ───────────────
+def deduplicate_docs(docs: List[Dict]) -> List[Dict]:
+    """Remove duplicate documents based on tnea_code + content hash."""
+    if not docs:
+        return []
+    
+    seen = set()
+    unique_docs = []
+    
+    for doc in docs:
+        meta = doc.get("metadata", {})
+        tnea_code = str(meta.get("tnea_code", ""))
+        content = doc.get("content", "")
+        
+        # Create a unique key from tnea_code + first 200 chars of content
+        content_hash = hash(content[:200])
+        key = f"{tnea_code}_{content_hash}"
+        
+        if key not in seen:
+            seen.add(key)
+            unique_docs.append(doc)
+    
+    return unique_docs
+
+# ─────────────── 🆕 CUTOFF QUERY HANDLER ───────────────
+def handle_cutoff_query(query: str, filters: dict, top_k: int) -> Tuple[Optional[List[Dict]], Optional[str]]:
+    """Handle cutoff-based queries using performance data."""
+    # Extract cutoff value from query
+    cutoff_patterns = [
+        r'cutoff\s+(?:of\s+)?(\d+)',
+        r'(\d+)\s*cutoff',
+        r'marks?\s+(?:of\s+)?(\d+)',
+        r'(\d+)\s*marks?'
+    ]
+    
+    cutoff_value = None
+    query_lower = query.lower()
+    
+    for pattern in cutoff_patterns:
+        match = re.search(pattern, query_lower)
+        if match:
+            cutoff_value = int(match.group(1))
+            break
+    
+    if not cutoff_value:
+        return None, None
+    
+    district = filters.get("district")
+    
+    try:
+        # Query performance table for colleges with matching cutoff
+        q = (supabase.table("performance")
+             .select("tnea_code, college_name, district, pass_percentage, total_appeared, total_passed")
+             .gte("pass_percentage", cutoff_value)
+             .order("pass_percentage", desc=True))
+        
+        if district:
+            q = q.ilike("district", f"%{district}%")
+        
+        res = q.limit(top_k).execute()
+        
+        if not res.data:
+            return None, f"No colleges found with performance >= {cutoff_value}%."
+        
+        lines, docs = [], []
+        for i, r in enumerate(res.data):
+            line = (f"{i+1}. {r['college_name']} (TNEA: {r['tnea_code']}, "
+                    f"District: {r['district']}) - Pass Rate: {r['pass_percentage']}%, "
+                    f"Passed: {r['total_passed']}/{r['total_appeared']}")
+            lines.append(line)
+            docs.append({
+                "metadata": {
+                    "college_name": r["college_name"],
+                    "tnea_code": r["tnea_code"],
+                    "district": r["district"],
+                    "doc_type": "performance"
+                },
+                "content": line,
+                "rerank_score": 10.0
+            })
+        
+        ctx = "<knowledge_base>\n" + "\n".join(lines) + "\n</knowledge_base>"
+        logger.info(f"🎯 Cutoff query: Found {len(docs)} colleges with performance >= {cutoff_value}%")
+        return docs, ctx
+        
+    except Exception as e:
+        logger.error(f"Cutoff query failed: {e}")
+        return None, None
 
 # ─────────────── XML FORMATTING ───────────────
 def format_context_xml(docs: List[Dict]) -> str:
@@ -225,7 +305,6 @@ Rewritten Question:"""
 
     try:
         import google.generativeai as genai
-        # 🛠️ FIX: Corrected hallucinated model name to standard 1.5 Flash
         model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(prompt)
         rewritten = response.text.strip().strip('"')
@@ -298,7 +377,7 @@ def entity_lookup(college_name: str, limit: int = 15) -> List[Dict]:
 
 # ─────────────── 🚀 OPTIMIZED BRANCH FETCHER ───────────────
 def get_branches_by_filters(district: str = None, branch_code: str = None, nba_required: str = None, limit: int = 10) -> List[Dict]:
-    _load_college_caches()  # Ensure cache is warm
+    _load_college_caches()
     try:
         q = supabase.table("documents").select("id, content, metadata").eq("metadata->>doc_type", "branch_info")
         if branch_code:
@@ -313,7 +392,6 @@ def get_branches_by_filters(district: str = None, branch_code: str = None, nba_r
         if not res.data:
             return []
 
-        # 🛠️ MASSIVE OPTIMIZATION: Filter district using IN-MEMORY cache instead of DB query
         if district:
             district_codes = {
                 str(meta.get("tnea_code")) 
@@ -327,7 +405,6 @@ def get_branches_by_filters(district: str = None, branch_code: str = None, nba_r
         if not filtered_docs:
             return []
 
-        # 🛠️ MASSIVE OPTIMIZATION: Map college names using IN-MEMORY cache
         for doc in filtered_docs:
             tc = str(doc["metadata"].get("tnea_code"))
             if tc in _COLLEGE_MAP_CACHE:
@@ -381,6 +458,13 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
 
     active_filters = dict(filters) if filters else {}
 
+    # 🆕 HANDLE CUTOFF QUERIES FIRST
+    if "cutoff" in query.lower() or "marks" in query.lower():
+        cutoff_docs, cutoff_ctx = handle_cutoff_query(query, active_filters, top_k)
+        if cutoff_docs:
+            return cutoff_docs, cutoff_ctx
+
+    # Fallback entity extraction
     if not active_filters.get("college_name") and not compare_colleges:
         resolved_fallback = fuzzy_resolve_college(query)
         if resolved_fallback:
@@ -390,10 +474,12 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
     if not compare_colleges:
         compare_colleges = active_filters.pop("compare_colleges", None)
 
+    # 1) COMPARISON MODE
     if intent == "compare" and compare_colleges:
         logger.info(f"🆚 Comparison mode: {compare_colleges}")
         return retrieve_for_comparison(compare_colleges, top_k)
 
+    # 2) NUMERICAL MODE
     numerical_metric = active_filters.pop("numerical_metric", None)
     if intent == "numerical" and numerical_metric == "pass_percentage":
         district = active_filters.get("district")
@@ -413,17 +499,20 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
         ctx = "<knowledge_base>\n" + "\n".join(lines) + "\n</knowledge_base>"
         return docs, ctx
 
+    # 3) SMART ENTITY LOOKUP
     college_name = active_filters.pop("college_name", None)
     if college_name:
         logger.info(f"🔍 Entity lookup: {college_name}")
         exact = entity_lookup(college_name, limit=15)
         if exact:
+            exact = deduplicate_docs(exact)  # 🆕 DEDUPLICATE
             for c in exact:
                 c["rerank_score"] = 10.0
-            return exact, format_context_xml(exact)
+            return exact[:top_k], format_context_xml(exact[:top_k])
         else:
             logger.info(f"⚠️ Exact entity lookup found nothing, falling back to vector search.")
 
+    # 4) SMART DOC_TYPE ROUTING
     query_lower = query.lower()
     table_name = "documents"
     
@@ -443,6 +532,7 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
             limit=top_k * 2
         )
         if sql_docs:
+            sql_docs = deduplicate_docs(sql_docs)  # 🆕 DEDUPLICATE
             for c in sql_docs:
                 c["rerank_score"] = 10.0
             sql_docs = sql_docs[:top_k]
@@ -456,6 +546,7 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
         table_name = "admission_documents"
         logger.info("🎯 Routing to: admission_documents")
 
+    # 5) VECTOR SEARCH
     active_filters.pop("branch_code", None)
     active_filters.pop("nba_accredited", None)
     active_filters.pop("district", None) 
@@ -481,18 +572,21 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
     if not candidates:
         return None, "No documents found matching your criteria."
 
-    # 🛠️ MEMORY GUARD: Explicitly manage memory during heavy reranking
+    # 6) RERANK
     pairs = [[query, c["content"]] for c in candidates]
     scores = reranker.predict(pairs)
     for i, sc in enumerate(scores):
         candidates[i]["rerank_score"] = float(sc)
     candidates.sort(key=lambda x: x["rerank_score"], reverse=True)
     
-    # 🛠️ MEMORY GUARD: Dereference heavy lists immediately
     del pairs
     del scores
     gc.collect()
 
+    # 🆕 DEDUPLICATE AFTER RERANKING
+    candidates = deduplicate_docs(candidates)
+
+    # 7) CONFIDENCE GATE
     best_rerank = candidates[0]["rerank_score"]
     best_vector = candidates[0].get("similarity", 0.0) 
     
@@ -503,7 +597,6 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
     top_docs = candidates[:top_k]
     top_docs = reorder_for_llm(top_docs)
     
-    # 🛠️ MEMORY GUARD: Clean up remaining candidates list
     del candidates
     
     return top_docs, format_context_xml(top_docs)
