@@ -138,10 +138,11 @@ def _normalize_filters(filters: dict) -> dict:
         if k == "district" and isinstance(v, str):
             v = v.strip().title()  # "COIMBATORE" -> "Coimbatore"
         elif k == "nba_accredited":
-            if isinstance(v, bool):
-                v = "Yes" if v else "No"
-            elif isinstance(v, str):
-                v = v.strip().title()
+            # 🛠️ FIX: DB stores JSON booleans (true/false), not "Yes"/"No"
+            if isinstance(v, str):
+                v = v.strip().lower() in ("yes", "true", "1", "accredited")
+            clean[k] = "true" if bool(v) else "false"
+            continue  # Crucial: skips the clean[k] = v at the bottom
         elif k in ("tnea_code", "branch_code"):
             v = str(v).strip()
         clean[k] = v
@@ -202,8 +203,8 @@ Rewritten Question:"""
 
     try:
         import google.generativeai as genai  # 🛠️ Local import
-        # 🛠️ FIX: Updated to gemini-2.0-flash to prevent 404 Not Found errors
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        # 🛠️ FIX: Updated to gemini-3.6-flash to prevent 404 Not Found errors
+        model = genai.GenerativeModel("gemini-3.6-flash")
         response = model.generate_content(prompt)
         rewritten = response.text.strip().strip('"')
         logger.info(f"🧠 Query Rewritten: '{current_question}' -> '{rewritten}'")
@@ -281,7 +282,10 @@ def get_branches_by_filters(district: str = None, branch_code: str = None, nba_r
         if branch_code:
             q = q.ilike("metadata->>branch_code", f"%{branch_code}%")
         if nba_required is not None:
-            nba_val = "Yes" if isinstance(nba_required, bool) and nba_required else "No"
+            # 🛠️ FIX: Map string/bool inputs to DB's 'true'/'false' text format
+            if isinstance(nba_required, str):
+                nba_required = nba_required.strip().lower() in ("yes", "true", "1", "accredited")
+            nba_val = "true" if nba_required else "false"
             q = q.eq("metadata->>nba_accredited", nba_val)
             
         res = q.execute()
