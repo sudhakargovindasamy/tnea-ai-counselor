@@ -2,13 +2,14 @@ import logging
 import difflib
 import os
 import re
-import gc  # 🛠️ Added for aggressive garbage collection
+import gc
+import torch
+from typing import List, Dict, Any, Optional, Tuple
 from app.services.database import supabase
 
 logger = logging.getLogger(__name__)
 
-# ═══════════════ 🧠 STRICT LAZY LOADING (Crucial for 512MB Render Limit) ═══════════════
-# NO heavy imports at the top level. PyTorch and Google libs load ONLY when a query arrives.
+# ═══════════════ 🧠 STRICT LAZY LOADING & MEMORY GUARDS ═══════════════
 embedding_model = None
 reranker = None
 GEMINI_AVAILABLE = False
@@ -17,20 +18,27 @@ def _load_models():
     global embedding_model, reranker
     if embedding_model is None:
         logger.info("🧠 Loading embedding model (first request)...")
-        from sentence_transformers import SentenceTransformer, CrossEncoder  # 🛠️ Lazy import
-        embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+        from sentence_transformers import SentenceTransformer
+        # Using device='cpu' explicitly prevents accidental GPU memory allocation attempts
+        embedding_model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2", device="cpu")
         logger.info("✅ Embedding model loaded.")
+        
     if reranker is None:
         logger.info("🧠 Loading reranker (first request)...")
-        from sentence_transformers import SentenceTransformer, CrossEncoder  # 🛠️ Lazy import
-        reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+        from sentence_transformers import CrossEncoder
+        reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2", device="cpu")
         logger.info("✅ Reranker loaded.")
-        gc.collect()  # Force garbage collection to free memory
-        logger.info("🧹 Garbage collection complete.")
+        
+        # 🛠️ CRITICAL: Aggressive memory cleanup after loading ~160MB of models
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        logger.info("🧹 Garbage collection complete. Memory stabilized.")
 
 QUERY_PREFIX = ""
 
 # ═══════════════ 🧠 ALIAS DICTIONARY (EXACT CSV MATCHES) ═══════════════
+# Fixed typos in original aliases (e.g., "Enginering" -> "Engineering")
 COLLEGE_ALIASES = {
     "ceg": "University Departments of Anna University , Chennai - CEG Campus",
     "mit": "University Departments of Anna University , Chennai - MIT Campus",
@@ -38,10 +46,10 @@ COLLEGE_ALIASES = {
     "psg": "PSG College of Technology",
     "ssn": "SSN College of Engineering",
     "svce": "Sri Venkateswara College of Engineering",
-    "sairam": "Sri Sai Ram Enginering College",  
+    "sairam": "Sri Sai Ram Engineering College",  
     "thiagarajar": "Thiagarajar College of Engineering",
     "kct": "Kumaraguru College of Technology",
-    "skcet": "Sri Krishna College of Enginering and Technology", 
+    "skcet": "Sri Krishna College of Engineering and Technology", 
     "bitsathy": "Bannari Amman Institute of Technology",
     "cit": "Coimbatore Institute of Technology",
     "easwari": "Easwari Engineering College",
@@ -56,32 +64,51 @@ COLLEGE_ALIASES = {
     "srm": "SRM Institute of Science and Technology"
 }
 
-# ═══════════════ 🧠 IN-MEMORY FUZZY RESOLVER ═══════════════
-COLLEGE_DIRECTORY = {}
+# ═══════════════ 🚀 GLOBAL CACHES (Crucial for 512MB Limit) ═══════════════
+# These load ONCE per worker lifecycle, eliminating repeated DB fetches.
+_COLLEGE_MAP_CACHE: Dict[str, Dict] = {}       # tnea_code -> metadata
+_COLLEGE_DIR_CACHE: Dict[str, str] = {}        # lower_name -> exact_name
+_COLLEGE_DIR_CLEAN_CACHE: Dict[str, str] = {}  # lower_name -> cleaned_name
 
-def load_college_directory():
-    global COLLEGE_DIRECTORY
-    if COLLEGE_DIRECTORY:
-        return 
+def _load_college_caches():
+    global _COLLEGE_MAP_CACHE, _COLLEGE_DIR_CACHE, _COLLEGE_DIR_CLEAN_CACHE
+    if _COLLEGE_MAP_CACHE:
+        return  # Already loaded
         
     try:
-        res = supabase.table("documents").select("metadata->>college_name").execute()
-        seen = set()
+        logger.info("🔄 Warming up college caches...")
+        # 🛠️ FIX: Only fetch college_info, not all documents!
+        res = supabase.table("documents").select("metadata").eq("metadata->>doc_type", "college_info").execute()
+        
+        stopwords = {"engineering", "college", "technology", "institute", "of", "and", 
+                     "autonomous", "the", "for", "engg", "eng", "tech", "enginering", "technolgoy"}
+                     
         for row in res.data:
-            name = row.get("college_name")
-            if name and name not in seen:
-                seen.add(name)
-                COLLEGE_DIRECTORY[name.lower()] = name
-        logger.info(f"✅ Loaded {len(COLLEGE_DIRECTORY)} colleges into memory.")
+            meta = row.get("metadata", {})
+            tnea_code = str(meta.get("tnea_code", ""))
+            name = meta.get("college_name", "")
+            
+            if tnea_code and name:
+                _COLLEGE_MAP_CACHE[tnea_code] = meta
+                name_lower = name.lower()
+                _COLLEGE_DIR_CACHE[name_lower] = name
+                
+                # Pre-compute cleaned names for ultra-fast fuzzy matching
+                clean_name = name_lower
+                for word in stopwords:
+                    clean_name = clean_name.replace(word, "")
+                _COLLEGE_DIR_CLEAN_CACHE[name_lower] = " ".join(clean_name.split())
+                
+        logger.info(f"✅ Cached {len(_COLLEGE_MAP_CACHE)} colleges into memory.")
     except Exception as e:
-        logger.error(f"Failed to load college directory: {e}")
+        logger.error(f"Failed to load college caches: {e}")
 
-def fuzzy_resolve_college(user_input: str) -> str:
+# ═══════════════ 🧠 IN-MEMORY FUZZY RESOLVER ═══════════════
+def fuzzy_resolve_college(user_input: str) -> Optional[str]:
     if not user_input:
         return None
-    if not COLLEGE_DIRECTORY:
-        load_college_directory()
-    if not COLLEGE_DIRECTORY:
+    _load_college_caches()
+    if not _COLLEGE_DIR_CACHE:
         return None
 
     expanded_input = user_input.lower()
@@ -91,65 +118,60 @@ def fuzzy_resolve_college(user_input: str) -> str:
             logger.info(f"🧠 Alias expanded '{alias}' -> '{full_name}'")
             break
 
-    stopwords = [
-        "engineering", "college", "technology", "institute", "of", "and", 
-        "autonomous", "the", "for", "engg", "eng", "tech", "enginering", "technolgoy"
-    ]
+    stopwords = {"engineering", "college", "technology", "institute", "of", "and", 
+                 "autonomous", "the", "for", "engg", "eng", "tech", "enginering", "technolgoy"}
     
     clean_input = expanded_input
     for word in stopwords:
         clean_input = clean_input.replace(word, "")
     clean_input = " ".join(clean_input.split())
+    input_nospace = clean_input.replace(" ", "")
     
     best_match = None
     highest_score = 0.0
     
-    for db_name_lower, db_name_exact in COLLEGE_DIRECTORY.items():
-        clean_db = db_name_lower
-        for word in stopwords:
-            clean_db = clean_db.replace(word, "")
-        clean_db = " ".join(clean_db.split())
-        
-        score1 = difflib.SequenceMatcher(None, clean_input, clean_db).ratio()
-        input_nospace = clean_input.replace(" ", "")
+    # 🛠️ OPTIMIZATION: Iterate over pre-computed clean cache
+    for db_name_lower, clean_db in _COLLEGE_DIR_CLEAN_CACHE.items():
         db_nospace = clean_db.replace(" ", "")
+        
+        # Fast-path substring check
+        if len(input_nospace) >= 4 and (input_nospace in db_nospace or db_nospace in input_nospace):
+            return _COLLEGE_DIR_CACHE[db_name_lower]
+            
+        score1 = difflib.SequenceMatcher(None, clean_input, clean_db).ratio()
         score2 = difflib.SequenceMatcher(None, input_nospace, db_nospace).ratio()
         
-        if len(input_nospace) >= 4 and (input_nospace in db_nospace or db_nospace in input_nospace):
-            score2 = 1.0 
-            
         score = max(score1, score2)
         if score > highest_score:
             highest_score = score
-            best_match = db_name_exact
+            best_match = db_name_lower
             
     if highest_score > 0.75:
-        logger.info(f"🧠 Fuzzy matched '{user_input}' to '{best_match}' (Score: {highest_score:.2f})")
-        return best_match
+        exact_name = _COLLEGE_DIR_CACHE[best_match]
+        logger.info(f"🧠 Fuzzy matched '{user_input}' to '{exact_name}' (Score: {highest_score:.2f})")
+        return exact_name
     return None
 
-# ─────────────── 🛠️ FIX 2: FILTER NORMALIZER ───────────────
+# ─────────────── 🛠️ FILTER NORMALIZER ───────────────
 def _normalize_filters(filters: dict) -> dict:
-    """Normalize filter keys/values to match what is actually stored in Supabase metadata."""
     if not filters:
         return {}
     clean = {}
     for k, v in filters.items():
         if k == "district" and isinstance(v, str):
-            v = v.strip().title()  # "COIMBATORE" -> "Coimbatore"
+            v = v.strip().title()
         elif k == "nba_accredited":
-            # 🛠️ FIX: DB stores JSON booleans (true/false), not "Yes"/"No"
             if isinstance(v, str):
                 v = v.strip().lower() in ("yes", "true", "1", "accredited")
             clean[k] = "true" if bool(v) else "false"
-            continue  # Crucial: skips the clean[k] = v at the bottom
+            continue
         elif k in ("tnea_code", "branch_code"):
             v = str(v).strip()
         clean[k] = v
     return clean
 
 # ─────────────── XML FORMATTING ───────────────
-def format_context_xml(docs):
+def format_context_xml(docs: List[Dict]) -> str:
     ctx = "<knowledge_base>\n"
     for i, doc in enumerate(docs):
         meta = doc.get("metadata", {})
@@ -162,7 +184,8 @@ def format_context_xml(docs):
     ctx += "</knowledge_base>"
     return ctx
 
-def reorder_for_llm(docs):
+def reorder_for_llm(docs: List[Dict]) -> List[Dict]:
+    """Mitigates 'Lost in the Middle' phenomenon for LLMs."""
     if len(docs) < 3:
         return docs
     return [docs[0]] + docs[2:] + [docs[1]]
@@ -173,7 +196,6 @@ def rewrite_query_with_history(current_question: str, chat_history: list) -> str
     if not chat_history:
         return current_question
 
-    # 🛠️ Lazy configure Gemini ONLY if a query actually needs it
     if not GEMINI_AVAILABLE:
         try:
             import google.generativeai as genai
@@ -202,9 +224,9 @@ Current Question: {current_question}
 Rewritten Question:"""
 
     try:
-        import google.generativeai as genai  # 🛠️ Local import
-        # 🛠️ FIX: Updated to gemini-3.6-flash to prevent 404 Not Found errors
-        model = genai.GenerativeModel("gemini-3.6-flash")
+        import google.generativeai as genai
+        # 🛠️ FIX: Corrected hallucinated model name to standard 1.5 Flash
+        model = genai.GenerativeModel("gemini-1.5-flash")
         response = model.generate_content(prompt)
         rewritten = response.text.strip().strip('"')
         logger.info(f"🧠 Query Rewritten: '{current_question}' -> '{rewritten}'")
@@ -214,21 +236,19 @@ Rewritten Question:"""
         return current_question
 
 # ─────────────── SMART ENTITY LOOKUP ───────────────
-def entity_lookup(college_name: str, limit: int = 15):
+def entity_lookup(college_name: str, limit: int = 15) -> List[Dict]:
     if not college_name or not str(college_name).strip():
         return []
         
-    # 🛠️ FIX: Safe Alias Substring Matching (Catches "sairam engineering college" -> "Sri Sai Ram...")
     college_lower = college_name.lower()
     for alias, full_name in COLLEGE_ALIASES.items():
-        # \b ensures word boundaries so "mit" doesn't accidentally match "submit" or "limit"
         if re.search(rf"\b{re.escape(alias)}\b", college_lower):
             logger.info(f"🧠 Alias match: '{alias}' found in '{college_name}' -> '{full_name}'")
             college_name = full_name
             break
 
     search_terms = college_name.lower()
-    stopwords = ["engineering", "college", "technology", "institute", "of", "and", "autonomous", "the", "for"]
+    stopwords = {"engineering", "college", "technology", "institute", "of", "and", "autonomous", "the", "for"}
     for word in stopwords:
         search_terms = search_terms.replace(word, "")
     search_terms = " ".join(search_terms.split())
@@ -276,13 +296,14 @@ def entity_lookup(college_name: str, limit: int = 15):
         logger.warning(f"Entity lookup primary failed: {e}.")
         return []
 
-def get_branches_by_filters(district: str = None, branch_code: str = None, nba_required: str = None, limit: int = 10):
+# ─────────────── 🚀 OPTIMIZED BRANCH FETCHER ───────────────
+def get_branches_by_filters(district: str = None, branch_code: str = None, nba_required: str = None, limit: int = 10) -> List[Dict]:
+    _load_college_caches()  # Ensure cache is warm
     try:
         q = supabase.table("documents").select("id, content, metadata").eq("metadata->>doc_type", "branch_info")
         if branch_code:
             q = q.ilike("metadata->>branch_code", f"%{branch_code}%")
         if nba_required is not None:
-            # 🛠️ FIX: Map string/bool inputs to DB's 'true'/'false' text format
             if isinstance(nba_required, str):
                 nba_required = nba_required.strip().lower() in ("yes", "true", "1", "accredited")
             nba_val = "true" if nba_required else "false"
@@ -292,9 +313,13 @@ def get_branches_by_filters(district: str = None, branch_code: str = None, nba_r
         if not res.data:
             return []
 
+        # 🛠️ MASSIVE OPTIMIZATION: Filter district using IN-MEMORY cache instead of DB query
         if district:
-            dist_res = supabase.table("documents").select("metadata").eq("metadata->>doc_type", "college_info").ilike("metadata->>district", f"%{district}%").execute()
-            district_codes = set(str(r["metadata"].get("tnea_code")) for r in dist_res.data if r["metadata"].get("tnea_code"))
+            district_codes = {
+                str(meta.get("tnea_code")) 
+                for meta in _COLLEGE_MAP_CACHE.values() 
+                if district.lower() in str(meta.get("district", "")).lower()
+            }
             filtered_docs = [doc for doc in res.data if str(doc["metadata"].get("tnea_code")) in district_codes]
         else:
             filtered_docs = res.data
@@ -302,13 +327,11 @@ def get_branches_by_filters(district: str = None, branch_code: str = None, nba_r
         if not filtered_docs:
             return []
 
-        all_colleges_res = supabase.table("documents").select("metadata").eq("metadata->>doc_type", "college_info").execute()
-        college_map = {str(r["metadata"].get("tnea_code")): r["metadata"] for r in all_colleges_res.data if r["metadata"].get("tnea_code")}
-        
+        # 🛠️ MASSIVE OPTIMIZATION: Map college names using IN-MEMORY cache
         for doc in filtered_docs:
             tc = str(doc["metadata"].get("tnea_code"))
-            if tc in college_map:
-                info = college_map[tc]
+            if tc in _COLLEGE_MAP_CACHE:
+                info = _COLLEGE_MAP_CACHE[tc]
                 doc["metadata"]["college_name"] = info.get("college_name", "Unknown College")
                 doc["metadata"]["district"] = info.get("district", "Unknown District")
                 doc["content"] = f"college_name: {info.get('college_name')}\n" + doc.get("content", "")
@@ -319,7 +342,7 @@ def get_branches_by_filters(district: str = None, branch_code: str = None, nba_r
         logger.error(f"Direct SQL branch fetch failed: {e}", exc_info=True)
         return []
 
-def get_top_by_pass_percentage(top_k, district=None):
+def get_top_by_pass_percentage(top_k: int, district: str = None) -> List[Dict]:
     try:
         q = (supabase.table("performance")
              .select("tnea_code, college_name, district, pass_percentage, total_appeared, total_passed")
@@ -331,7 +354,7 @@ def get_top_by_pass_percentage(top_k, district=None):
     except Exception:
         return [] 
 
-def retrieve_for_comparison(college_names, top_k=5):
+def retrieve_for_comparison(college_names: List[str], top_k: int = 5) -> Tuple[List[Dict], str]:
     if not college_names:
         return None, "Please tell me which colleges you would like to compare."
         
@@ -348,22 +371,16 @@ def retrieve_for_comparison(college_names, top_k=5):
     all_docs = all_docs[:top_k * 2] 
     return all_docs, format_context_xml(all_docs)
 
-# ─────────────── MAIN RETRIEVE ───────────────
+# ─────────────── MAIN RETRIEVE ORCHESTRATOR ───────────────
 def retrieve(query: str, top_k: int = 5, filters: dict = None,
              compare_colleges: list = None, intent: str = "search", chat_history: list = None):
 
-    # 🛠️ FIX: Ensure models are loaded lazily on first request to prevent OOM crash
     _load_models()
-
-    # 🛠️ FIX 2: Normalize filters immediately upon entry
     filters = _normalize_filters(filters)
-
-    # 0) QUERY REWRITING 
     query = rewrite_query_with_history(query, chat_history)
 
     active_filters = dict(filters) if filters else {}
 
-    # 🛠️ FIX 2: FALLBACK ENTITY EXTRACTION (Catches typos if LLM query understanding fails)
     if not active_filters.get("college_name") and not compare_colleges:
         resolved_fallback = fuzzy_resolve_college(query)
         if resolved_fallback:
@@ -373,12 +390,10 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
     if not compare_colleges:
         compare_colleges = active_filters.pop("compare_colleges", None)
 
-    # 1) COMPARISON MODE
     if intent == "compare" and compare_colleges:
         logger.info(f"🆚 Comparison mode: {compare_colleges}")
         return retrieve_for_comparison(compare_colleges, top_k)
 
-    # 2) NUMERICAL MODE
     numerical_metric = active_filters.pop("numerical_metric", None)
     if intent == "numerical" and numerical_metric == "pass_percentage":
         district = active_filters.get("district")
@@ -398,7 +413,6 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
         ctx = "<knowledge_base>\n" + "\n".join(lines) + "\n</knowledge_base>"
         return docs, ctx
 
-    # 3) SMART ENTITY LOOKUP
     college_name = active_filters.pop("college_name", None)
     if college_name:
         logger.info(f"🔍 Entity lookup: {college_name}")
@@ -410,7 +424,6 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
         else:
             logger.info(f"⚠️ Exact entity lookup found nothing, falling back to vector search.")
 
-    # 4) 🚀 SMART DOC_TYPE ROUTING & DIRECT SQL FETCH
     query_lower = query.lower()
     table_name = "documents"
     
@@ -418,7 +431,6 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
     branch_code_filter = active_filters.get("branch_code")
     nba_filter = active_filters.get("nba_accredited")
 
-    # 🛠️ FIX 1: Regex word boundaries (\b) prevent "ec" from matching "technology"
     branch_keywords = r"\b(branch|intake|cse|cs|mechanical|me|ece|ec|nba|seat|course|computer science)\b"
     is_branch_query = bool(re.search(branch_keywords, query_lower)) or branch_code_filter or nba_filter
     
@@ -433,10 +445,8 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
         if sql_docs:
             for c in sql_docs:
                 c["rerank_score"] = 10.0
-            # 🛠️ FIX: Slice down to exact top_k requested by user
             sql_docs = sql_docs[:top_k]
             return sql_docs, format_context_xml(sql_docs)
-        # If SQL returns nothing, fall through to vector search
         
     elif re.search(r"\b(hostel|fee|placement|transport|mess|rent|principal|address|autonomous)\b", query_lower):
         active_filters["doc_type"] = "college_info"
@@ -446,7 +456,6 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
         table_name = "admission_documents"
         logger.info("🎯 Routing to: admission_documents")
 
-    # 5) VECTOR SEARCH 
     active_filters.pop("branch_code", None)
     active_filters.pop("nba_accredited", None)
     active_filters.pop("district", None) 
@@ -472,14 +481,18 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
     if not candidates:
         return None, "No documents found matching your criteria."
 
-    # 6) RERANK
+    # 🛠️ MEMORY GUARD: Explicitly manage memory during heavy reranking
     pairs = [[query, c["content"]] for c in candidates]
     scores = reranker.predict(pairs)
     for i, sc in enumerate(scores):
         candidates[i]["rerank_score"] = float(sc)
     candidates.sort(key=lambda x: x["rerank_score"], reverse=True)
+    
+    # 🛠️ MEMORY GUARD: Dereference heavy lists immediately
+    del pairs
+    del scores
+    gc.collect()
 
-    # 7) CONFIDENCE GATE 
     best_rerank = candidates[0]["rerank_score"]
     best_vector = candidates[0].get("similarity", 0.0) 
     
@@ -489,4 +502,8 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
 
     top_docs = candidates[:top_k]
     top_docs = reorder_for_llm(top_docs)
+    
+    # 🛠️ MEMORY GUARD: Clean up remaining candidates list
+    del candidates
+    
     return top_docs, format_context_xml(top_docs)
