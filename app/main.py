@@ -2,6 +2,8 @@ import logging
 import os
 import math
 import time
+import asyncio
+from datetime import datetime
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,7 +26,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 🛠️ FIX 5: Universal retry wrapper for ALL Gemini calls (rewrite + understand + generate)
+# 🛠️ FIX 5: Universal retry wrapper for ALL Gemini calls
 RETRY_TOKENS = ("429", "exhausted", "quota", "resource has been", "unavailable", "rate", "deadline")
 
 def _llm_retry(fn, *args, **kwargs):
@@ -46,7 +48,6 @@ def _llm_retry(fn, *args, **kwargs):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("🚀 Starting TNEA Counselor AI API...")
-    # ✅ REMOVED: Model preloading to save 512MB RAM limit
     logger.info("ℹ️ Models will be loaded lazily on first request (memory optimization).")
     
     # Quick DB check to ensure credentials are valid
@@ -74,6 +75,23 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 🛠️ NEW: Request timeout middleware to prevent 502 errors on Render
+@app.middleware("http")
+async def timeout_middleware(request: Request, call_next):
+    try:
+        # Set a 60-second timeout for all requests
+        response = await asyncio.wait_for(call_next(request), timeout=60.0)
+        return response
+    except asyncio.TimeoutError:
+        logger.error("⏱️ Request timed out after 60 seconds")
+        return JSONResponse(
+            status_code=504,
+            content={
+                "error": "timeout",
+                "message": "Request took too long. Please try a simpler query or try again later."
+            }
+        )
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
@@ -115,6 +133,7 @@ def root():
                 <strong>Available Routes:</strong><br>
                 📚 <a href="/docs">/docs</a> (Swagger UI)<br>
                 🩺 <a href="/health">/health</a> (Status Check)<br>
+                🔥 <a href="/warmup">/warmup</a> (Pre-load Models)<br>
                 💬 <a href="/redoc">/redoc</a> (ReDoc)
             </div>
         </div>
@@ -124,7 +143,30 @@ def root():
 
 @app.get("/health")
 def health():
-    return {"status": "healthy", "version": "1.0-final"}
+    """Quick health check - responds immediately without loading models"""
+    return {
+        "status": "healthy",
+        "version": "1.0-final",
+        "timestamp": datetime.utcnow().isoformat()
+    }
+
+@app.get("/warmup")
+def warmup():
+    """Pre-load models to avoid cold start on first query. Call this from frontend on page load."""
+    try:
+        from app.services.retrieval import _load_models
+        _load_models()
+        return {
+            "status": "warmed",
+            "message": "Models loaded successfully. Ready for queries.",
+            "timestamp": datetime.utcnow().isoformat()
+        }
+    except Exception as e:
+        logger.error(f"Warmup failed: {e}")
+        return {
+            "status": "error",
+            "message": str(e)
+        }
 
 @app.post("/clear_chat/{session_id}")
 def clear_chat(session_id: str):
@@ -163,6 +205,17 @@ def extract_source_info(doc: dict) -> Source:
         district=district,
         score=round(normalized_score, 4)
     )
+
+def deduplicate_sources(sources: list[Source]) -> list[Source]:
+    """Remove duplicate sources based on tnea_code"""
+    seen = set()
+    unique = []
+    for source in sources:
+        key = source.tnea_code
+        if key not in seen:
+            seen.add(key)
+            unique.append(source)
+    return unique
 
 def format_cache_response(cached_response):
     if isinstance(cached_response, dict):
@@ -270,11 +323,11 @@ def query(req: QueryRequest):
                                reference_answer=None, intent=intent)
         except Exception as e:
             logger.error(f"🚨 LLM Generation completely failed (Quota/Deprecation): {e}")
-            # Return a polite 200 response instead of crashing with a 500
             answer = "I'm sorry, I'm currently experiencing high demand or technical difficulties. Please try again in a few minutes."
 
-        # 8) Smart Source Extraction
+        # 8) Smart Source Extraction + Deduplication
         sources = [extract_source_info(d) for d in docs]
+        sources = deduplicate_sources(sources)  # 🛠️ NEW: Remove duplicate colleges
 
         # 9) Save to cache 
         sources_dict = [s.model_dump() if hasattr(s, 'model_dump') else s.dict() for s in sources]
