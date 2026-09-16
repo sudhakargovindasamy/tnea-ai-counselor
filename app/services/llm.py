@@ -4,12 +4,12 @@ from app.services.memory import memory
 
 logger = logging.getLogger(__name__)
 
-# 🚀 Production Fallback Chain (Updated to bypass 404 Deprecation errors)
+# 🚀 Production Fallback Chain (Based on what actually works in your logs)
 FALLBACK_MODELS = [
-    "gemini-2.0-flash",         # Primary: Most reliable free-tier model currently
-    "gemini-1.5-flash-latest",  # Secondary: Valid 1.5 endpoint
-    "gemini-3.5-flash",         # Tertiary: Experimental fallback
-    "gemini-3.6-flash"          # Quaternary: Experimental fallback
+    "gemini-3.6-flash",         # Primary: Confirmed working
+    "gemini-3.5-flash",         # Secondary: Works but hits quota
+    "gemini-2.0-flash",         # Tertiary: Try anyway
+    "gemini-1.5-flash-latest"   # Last resort
 ]
 
 SYSTEM_PROMPT = """You are an expert AI counselor for Tamil Nadu Engineering Colleges (TNEA).
