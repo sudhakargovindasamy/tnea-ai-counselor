@@ -76,7 +76,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🛠️ NEW: Request timeout middleware to prevent 502 errors on Render
+# 🛠️ Request timeout middleware to prevent 502 errors on Render
 @app.middleware("http")
 async def timeout_middleware(request: Request, call_next):
     try:
@@ -291,16 +291,19 @@ def query(req: QueryRequest):
             understood = _llm_retry(understand_query, search_query)
         except Exception as e:
             logger.warning(f"⚠️ Query understanding completely failed: {e}. Defaulting to search intent.")
-            understood = {"intent": "search", "filters": {}}
+            understood = {"intent": "search"}
 
         intent = understood.pop("intent", "search")
+        
+        # 🛠️ Map new Pydantic intents ("list", "filter") to existing retrieval routes
+        if intent in ["list", "filter"]:
+            intent = "search"
+            
         compare_colleges = understood.pop("compare_colleges", None)
         
-        nested_filters = understood.pop("filters", {})
-        if isinstance(nested_filters, dict):
-            understood.update(nested_filters)
-        
-        active_filters = req.filters if req.filters else {}
+        # 🛠️ The updated understand_query returns a flat dict of filters (district, branch_code, etc.)
+        # We merge them directly into active_filters, overriding empty frontend filters
+        active_filters = req.filters.copy() if req.filters else {}
         active_filters.update(understood)
 
         # 6) Retrieve
@@ -327,7 +330,7 @@ def query(req: QueryRequest):
 
         # 8) Smart Source Extraction + Deduplication
         sources = [extract_source_info(d) for d in docs]
-        sources = deduplicate_sources(sources)  # 🛠️ NEW: Remove duplicate colleges
+        sources = deduplicate_sources(sources)
 
         # 9) Save to cache 
         sources_dict = [s.model_dump() if hasattr(s, 'model_dump') else s.dict() for s in sources]
