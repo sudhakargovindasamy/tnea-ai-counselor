@@ -38,7 +38,7 @@ def _llm_retry(fn, *args, **kwargs):
             last = e
             msg = str(e).lower()
             if attempt < 2 and any(t in msg for t in RETRY_TOKENS):
-                wait = 8 * (attempt + 1)
+                wait = 2 * (attempt + 1)  # Reduced to prevent Render 504 Gateway Timeouts
                 logger.warning(f"⏳ Rate-limited in {getattr(fn, '__name__', 'llm')}. Backoff {wait}s (attempt {attempt+1}/3)")
                 time.sleep(wait)
             else:
