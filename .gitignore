@@ -45,3 +45,4 @@ __pycache__/
 .venv/
 test_db.py
 test_join.py
+data/processed/
