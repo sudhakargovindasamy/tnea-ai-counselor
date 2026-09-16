@@ -217,6 +217,15 @@ def entity_lookup(college_name: str, limit: int = 15):
     if not college_name or not str(college_name).strip():
         return []
         
+    # 🛠️ FIX: Safe Alias Substring Matching (Catches "sairam engineering college" -> "Sri Sai Ram...")
+    college_lower = college_name.lower()
+    for alias, full_name in COLLEGE_ALIASES.items():
+        # \b ensures word boundaries so "mit" doesn't accidentally match "submit" or "limit"
+        if re.search(rf"\b{re.escape(alias)}\b", college_lower):
+            logger.info(f"🧠 Alias match: '{alias}' found in '{college_name}' -> '{full_name}'")
+            college_name = full_name
+            break
+
     search_terms = college_name.lower()
     stopwords = ["engineering", "college", "technology", "institute", "of", "and", "autonomous", "the", "for"]
     for word in stopwords:
