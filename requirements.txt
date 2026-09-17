@@ -1,49 +1,42 @@
-# Core Framework
-fastapi==0.115.0
-uvicorn[standard]==0.30.0
-python-dotenv==1.0.1
-pydantic==2.8.0
+# ─────────────────────────────────────────────────────────────
+# TNEA Counselor RAG System - Production Dependencies
+# Optimized for 512MB RAM deployment on Render
+# ─────────────────────────────────────────────────────────────
+
+# ━━━ Core Framework ━━━
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
 python-dotenv>=1.0.1
 pydantic>=2.8.0
-pydantic-settings>=2.15.0
+pydantic-settings>=2.5.0
 slowapi>=0.1.10
+python-multipart>=0.0.9
+httpx>=0.27.0
 
-# Database
-supabase==2.7.0
+# ━━━ Database ━━━
 supabase>=2.7.0
 
-# LLM SDKs (Both new and old Google SDKs for maximum compatibility)
-google-genai==0.3.0
-google-generativeai==0.8.3
-# LLM SDKs
-google-genai>=2.23.0
+# ━━━ LLM SDKs (Google Gemini) ━━━
+# New SDK (used in llm.py, query_understanding.py) - stable v1.x
+google-genai>=1.0.0
+# Legacy SDK (used in retrieval.py fallback) - kept for compatibility
 google-generativeai>=0.8.3
 
-# Utilities
-httpx==0.27.0
-python-multipart==0.0.9
-httpx>=0.27.0
-python-multipart>=0.0.9
-
-# Data & ML
-numpy==1.26.4
-pandas==2.2.2
-scikit-learn==1.5.2
-numpy>=1.26.4
-pandas>=2.2.2
-scikit-learn>=1.5.2
-
-# AI/ML Models (CPU-ONLY to prevent Hugging Face disk overflow)
+# ━━━ AI/ML Models (CPU-ONLY for 512MB RAM) ━━━
+# 🚨 CRITICAL: Must use CPU-only wheels to prevent 2GB+ CUDA bloat
 --extra-index-url https://download.pytorch.org/whl/cpu
-torch==2.2.1+cpu
-sentence-transformers==3.0.0
-# AI/ML Models
-torch>=2.2.1
+torch>=2.2.1+cpu
 sentence-transformers>=3.0.0
 
-# Testing & Quality
+# ━━━ Utilities & Data Processing ━━━
+numpy>=1.26.4
+pandas>=2.2.2
+tenacity>=8.2.3
+
+# ━━━ Observability ━━━
+langfuse>=2.0.0
+
+# ━━━ Testing & Quality ━━━
 pytest>=9.1.1
-pytest-asyncio>=1.4.0
+pytest-asyncio>=0.24.0
 ruff>=0.16.7
