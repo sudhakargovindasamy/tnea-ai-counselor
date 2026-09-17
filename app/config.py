@@ -1,61 +1,106 @@
-import os
-from dotenv import load_dotenv
-
-
-from pathlib import Path
-
-
-# 1. Hardcode your exact .env path
-ENV_PATH = Path("/home/sudhakar/Intern/RAG-final/.env")
-
-# 2. Force load it
-if ENV_PATH.exists():
-    load_dotenv(dotenv_path=ENV_PATH, override=True)
-else:
-    print(f"❌ CRITICAL: .env file NOT FOUND at {ENV_PATH}")
-
-# 3. Quick check to confirm the key is loaded
-_gemini_key = os.getenv("GEMINI_API_KEY", "")
-if _gemini_key:
-    print(f"✅ GEMINI_API_KEY loaded successfully (starts with {_gemini_key[:8]}...)")
-else:
-    print("❌ WARNING: GEMINI_API_KEY is missing in the .env file!")
-
 """
 app/config.py
 Configuration management using pydantic-settings.
-Securely loads and validates environment variables from .env.
+Automatically loads environment variables from .env (local) or Render dashboard (production).
 """
 
-load_dotenv()
-
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+import os
+from pathlib import Path
+from dotenv import load_dotenv
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# ENVIRONMENT DETECTION & LOADING
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# Detect if running on Render (production) or locally
+IS_RENDER = os.getenv("RENDER", "").lower() == "true"
+IS_PRODUCTION = os.getenv("ENVIRONMENT", "").lower() in ("production", "prod")
+
+# On local machine, try to load .env file
+if not IS_RENDER:
+    env_path = Path(".env")
+    if env_path.exists():
+        load_dotenv(dotenv_path=env_path, override=True)
+        print(f"📄 Loaded environment from {env_path.absolute()}")
+    else:
+        print("⚠️ No .env file found - using system environment variables")
+else:
+    print("🚀 Running on Render - using dashboard environment variables")
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# PYDANTIC SETTINGS CLASS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 class Settings(BaseSettings):
+    """Application settings loaded from environment variables or .env file."""
+    
+    # Required (must be set in .env or Render dashboard)
     SUPABASE_URL: str
     SUPABASE_KEY: str
     GEMINI_API_KEY: str
+    
+    # Optional with defaults
     ADMIN_SECRET_KEY: str = "TNEA_SUPER_SECRET_ADMIN_KEY_2026"
-    IS_PRODUCTION: bool = False
     LANGFUSE_PUBLIC_KEY: str | None = None
     LANGFUSE_SECRET_KEY: str | None = None
     LANGFUSE_HOST: str = "https://cloud.langfuse.com"
+    
+    # CORS settings
     ALLOWED_ORIGINS: list[str] = ["*"]
-
+    
+    # Environment flags
+    IS_PRODUCTION: bool = IS_PRODUCTION or IS_RENDER
+    
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="ignore"
+        extra="ignore",
+        case_sensitive=True
     )
 
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# INITIALIZE SETTINGS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 settings = Settings()
 
-# Backwards-compatibility exports
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# VALIDATION & FEEDBACK
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+print("\n" + "="*60)
+print("🔧 TNEA COUNSELOR CONFIGURATION")
+print("="*60)
+
+# Check critical keys
+if settings.SUPABASE_URL and settings.SUPABASE_KEY:
+    print(f"✅ Supabase: Connected to {settings.SUPABASE_URL[:30]}...")
+else:
+    print("⚠️ Supabase: Using local document fallback")
+
+if settings.GEMINI_API_KEY:
+    print(f"✅ Gemini API: Key loaded (starts with {settings.GEMINI_API_KEY[:8]}...)")
+else:
+    print("❌ Gemini API: MISSING - LLM generation will fail!")
+
+if settings.LANGFUSE_PUBLIC_KEY and settings.LANGFUSE_SECRET_KEY:
+    print(f"✅ Langfuse: Observability enabled")
+else:
+    print("ℹ️ Langfuse: Disabled (optional)")
+
+print(f"🌍 Environment: {'Production' if settings.IS_PRODUCTION else 'Development'}")
+print("="*60 + "\n")
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# BACKWARDS-COMPATIBILITY EXPORTS
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
 SUPABASE_URL = settings.SUPABASE_URL
 SUPABASE_KEY = settings.SUPABASE_KEY
 GEMINI_API_KEY = settings.GEMINI_API_KEY
