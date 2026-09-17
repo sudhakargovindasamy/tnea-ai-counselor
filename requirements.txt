@@ -3,6 +3,9 @@
 # Optimized for 512MB RAM deployment on Render
 # ─────────────────────────────────────────────────────────────
 
+# 🚨 CRITICAL: Force CPU-only PyTorch wheels to prevent 2GB+ CUDA bloat
+--extra-index-url https://download.pytorch.org/whl/cpu
+
 # ━━━ Core Framework ━━━
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
@@ -17,15 +20,12 @@ httpx>=0.27.0
 supabase>=2.7.0
 
 # ━━━ LLM SDKs (Google Gemini) ━━━
-# New SDK (used in llm.py, query_understanding.py) - stable v1.x
 google-genai>=1.0.0
-# Legacy SDK (used in retrieval.py fallback) - kept for compatibility
 google-generativeai>=0.8.3
 
-# ━━━ AI/ML Models (CPU-ONLY for 512MB RAM) ━━━
-# 🚨 CRITICAL: Must use CPU-only wheels to prevent 2GB+ CUDA bloat
---extra-index-url https://download.pytorch.org/whl/cpu
-torch>=2.2.1+cpu
+# ━━━ AI/ML Models ━━━
+# Note: --extra-index-url above forces CPU wheels for torch
+torch>=2.2.1
 sentence-transformers>=3.0.0
 
 # ━━━ Utilities & Data Processing ━━━
