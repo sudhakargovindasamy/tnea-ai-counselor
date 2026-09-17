@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 FALLBACK_MODELS = [
     "gemini-3.8-flash",   # Latest and fastest (Released Sept 2026)
     "gemini-3.5-flash",   # Highly stable fallback
-    "gemini-2.5-flash"    # Legacy fallback (Still works until Oct 2026)
+    "gemini-3.6-flash"    # Stable mid-tier fallback
 ]
 
 # ==========================================
