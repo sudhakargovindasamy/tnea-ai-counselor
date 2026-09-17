@@ -378,10 +378,14 @@ async def chat(request: Request, req: QueryRequest):
             tracer.log_llm_call(prompt=prompt_preview, answer=full_answer)
             tracer.finish()
 
+            # 🚨 Prevent caching error messages (Poisoned Cache Fix)
+            is_error = full_answer.startswith("Error:") or full_answer.startswith("[Error:") or "LLM Generation failed" in full_answer
+
             # 7. Cache Response & Save Memory
-            save_to_cache(req.question, full_answer, sources_dict)
+            if not is_error:
+                save_to_cache(req.question, full_answer, sources_dict)
             
-            # 💾 Save to conversational memory (Moved here from llm.py to prevent duplicates)
+            # 💾 Save to conversational memory
             memory.add_message(req.session_id, "user", req.question)
             memory.add_message(req.session_id, "assistant", full_answer)
 
@@ -424,7 +428,7 @@ def query(request: Request, req: QueryRequest):
             tracer.log_cache_hit(cached_response.get("answer", ""))
             tracer.finish()
             memory.add_message(req.session_id, "user", req.question)
-            memory.add_message(req.session_id, "model", cached_response.get("answer", ""))
+            memory.add_message(req.session_id, "assistant", cached_response.get("answer", ""))
             return format_cache_response(cached_response)
 
         # 2) Chat History & Query Translation
@@ -462,17 +466,21 @@ def query(request: Request, req: QueryRequest):
             tracer.log_llm_call(prompt="None", answer=safe_answer)
             tracer.finish()
             memory.add_message(req.session_id, "user", req.question)
-            memory.add_message(req.session_id, "model", safe_answer)
+            memory.add_message(req.session_id, "assistant", safe_answer)
             return QueryResponse(answer=safe_answer, sources=[])
 
         # 5) Generate Answer with Grounded Citations
         prompt_preview = f"Context Length: {len(context_data)} chars | Question: {req.question}"
+        is_error = False
         try:
             answer = _llm_retry(generate_answer, req.question, context_data, req.session_id, 
                                reference_answer=None, intent=intent, docs=docs)
+            if answer.startswith("Error:"):
+                is_error = True
         except Exception as e:
             logger.error(f"🚨 LLM Generation failed: {e}", exc_info=True)
             answer = f"Error: LLM Generation failed with error: {type(e).__name__}: {e!s}"
+            is_error = True
 
         tracer.log_llm_call(prompt=prompt_preview, answer=answer)
         tracer.finish()
@@ -481,12 +489,14 @@ def query(request: Request, req: QueryRequest):
         sources = [extract_source_info(d) for d in docs]
         sources = deduplicate_sources(sources)
 
-        # 7) Save to Cache & Memory
+        # 7) Save to Cache & Memory (🚨 ONLY IF NOT AN ERROR)
         sources_dict = [s.model_dump() if hasattr(s, 'model_dump') else s.dict() for s in sources]
-        save_to_cache(req.question, answer, sources_dict)
+        
+        if not is_error:
+            save_to_cache(req.question, answer, sources_dict)
 
         memory.add_message(req.session_id, "user", req.question)
-        memory.add_message(req.session_id, "model", answer)
+        memory.add_message(req.session_id, "assistant", answer)
 
         return QueryResponse(answer=answer, sources=sources)
 
