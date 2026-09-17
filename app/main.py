@@ -95,15 +95,17 @@ app.add_middleware(
 @app.middleware("http")
 async def timeout_middleware(request: Request, call_next):
     try:
-        response = await asyncio.wait_for(call_next(request), timeout=60.0)
+        # 🚨 CRITICAL: Increased to 180s for Render free-tier cold starts
+        # Loading PyTorch models from disk into RAM takes 40-60s on 0.5 vCPU
+        response = await asyncio.wait_for(call_next(request), timeout=180.0)
         return response
     except asyncio.TimeoutError:
-        logger.error("⏱️ Request timed out after 60 seconds")
+        logger.error("⏱️ Request timed out after 180 seconds")
         return JSONResponse(
             status_code=504,
             content={
                 "error": "timeout",
-                "message": "Request took too long. Please try a simpler query or try again later."
+                "message": "The AI is waking up and loading models. Please try again in a moment."
             }
         )
 
@@ -298,6 +300,10 @@ async def chat(request: Request, req: QueryRequest):
                 cached_sources = cached_response.get("sources", [])
                 tracer.log_cache_hit(cached_answer)
                 tracer.finish()
+                
+                # Save to memory
+                memory.add_message(req.session_id, "user", req.question)
+                memory.add_message(req.session_id, "assistant", cached_answer)
 
                 # Stream cached answer in chunks for natural UI rendering
                 words = cached_answer.split(" ")
@@ -344,6 +350,11 @@ async def chat(request: Request, req: QueryRequest):
                 safe_msg = context_data if (isinstance(context_data, str) and context_data.strip()) else "The provided TNEA database does not contain information to answer this."
                 tracer.log_llm_call(prompt="None", answer=safe_msg)
                 tracer.finish()
+                
+                # Save to memory
+                memory.add_message(req.session_id, "user", req.question)
+                memory.add_message(req.session_id, "assistant", safe_msg)
+                
                 yield f"data: {json.dumps({'token': safe_msg})}\n\n"
                 yield f"data: {json.dumps({'sources': []})}\n\n"
                 yield "data: [DONE]\n\n"
@@ -367,8 +378,12 @@ async def chat(request: Request, req: QueryRequest):
             tracer.log_llm_call(prompt=prompt_preview, answer=full_answer)
             tracer.finish()
 
-            # 7. Cache Response
+            # 7. Cache Response & Save Memory
             save_to_cache(req.question, full_answer, sources_dict)
+            
+            # 💾 Save to conversational memory (Moved here from llm.py to prevent duplicates)
+            memory.add_message(req.session_id, "user", req.question)
+            memory.add_message(req.session_id, "assistant", full_answer)
 
             # 8. Send Sources Metadata & Done Signal
             yield f"data: {json.dumps({'sources': sources_dict})}\n\n"
