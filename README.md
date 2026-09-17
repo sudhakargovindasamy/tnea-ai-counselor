@@ -220,6 +220,8 @@ uvicorn app.main:app --reload --port 8000
 
 > Full request/response shapes, score-interpretation guidance, and frontend integration tips live in **[API_DOCS.md](./API_DOCS.md)**.
 
+> 📘 **Frontend developers:** see the **[Frontend Integration Guide](./FRONTEND_INTEGRATION_GUIDE.md)** for exact request/response shapes for every endpoint, a ready-to-use SSE streaming implementation for `/chat`, session-ID handling, and error-handling rules.
+
 ### Example Query (`/query`)
 ```bash
 curl -X POST "http://localhost:8000/query" \
