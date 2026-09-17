@@ -84,10 +84,13 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# 🛠️ CORS FIX: Browsers strictly block allow_origins=["*"] if allow_credentials=True.
+# Since we pass session_id in the JSON body and don't use HTTP-only cookies, 
+# credentials must be False for the frontend fetch request to succeed.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  
-    allow_credentials=True,
+    allow_credentials=False,  # <--- 🚨 CHANGED FROM True TO False
     allow_methods=["*"],
     allow_headers=["*"],
 )
