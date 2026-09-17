@@ -1,11 +1,15 @@
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import time
+
 import pandas as pd
 from sentence_transformers import SentenceTransformer
+
 from app.services.database import supabase
+
 
 # ─────────── Retry Helper ───────────
 def insert_with_retry(table, records, max_retries=4):
@@ -69,7 +73,7 @@ for i in range(0, len(sql_records), BATCH):
 
 # ─────────── Part B: Embed summaries into documents ───────────
 def build_perf_text(row):
-    text = f"Academic Performance Report\n"
+    text = "Academic Performance Report\n"
     text += f"College Name: {row['college_name']}\n"
     text += f"TNEA Code: {row['tnea_code']}\n"
     text += f"District: {row['district']}\n"

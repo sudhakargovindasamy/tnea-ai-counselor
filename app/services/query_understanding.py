@@ -1,20 +1,19 @@
 import json
-import re
-import os
 import logging
-from typing import List, Optional, Literal
+import os
+import re
 from functools import lru_cache
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
 logger = logging.getLogger(__name__)
 
-# 🚀 Production Fallback Chain (Updated with valid Gemini model names)
+# 🚀 Production Fallback Chain (Updated for current API availability)
 FALLBACK_MODELS = [
-    "gemini-2.0-flash",         # Primary: Latest stable
-    "gemini-1.5-flash",         # Secondary: Proven stable
-    "gemini-1.5-flash-latest",  # Tertiary
-    "gemini-1.5-pro",           # Last resort
+    "gemini-3.8-flash",   # Latest and fastest (Released Sept 2026)
+    "gemini-3.5-flash",   # Highly stable fallback
+    "gemini-2.5-flash"    # Legacy fallback (Still works until Oct 2026)
 ]
 
 # ==========================================
@@ -24,31 +23,18 @@ class QueryUnderstandingSchema(BaseModel):
     intent: Literal["search", "compare", "numerical", "filter", "list", "cutoff"] = Field(
         description="Primary intent. 'filter' for constraints, 'list' for broad lists, 'search' for general facts, 'cutoff' for marks/cutoff queries."
     )
-    compare_colleges: Optional[List[str]] = Field(default=None, description="List of college names if intent is compare")
-    college_name: Optional[str] = Field(default=None, description="Specific college name")
-    district: Optional[str] = Field(default=None, description="Title Case district (e.g., Chennai, Coimbatore, Salem)")
-    autonomous: Optional[Literal["Yes", "No"]] = Field(default=None)
-    branch_code: Optional[Literal[
-        "CS", "EC", "ME", "IT", "AD", "CE", "EE", "CH", "AU", "CB", 
-        "AL", "SC", "AE", "BM", "BT", "AG", "EV", "IC", "EI", "CY",
-        "FT", "TX", "AM", "CN", "EM", "EY", "EL", "GI", "MD", "MC",
-        "MT", "PC", "PH", "PE", "RM", "SF", "VL", "CD", "CJ", "DA",
-        "DS", "EA", "EF", "EN", "EX", "HT", "IB", "IN", "MM", "MR",
-        "MU", "TC", "TT", "AR", "AS", "BS", "BY", "CC", "CF", "CG",
-        "CI", "CK", "CL", "CM", "FY", "IY", "MF", "MS", "MY", "PN",
-        "PR", "RA", "RI", "SB", "TS", "X", "B*", "AT", "AO", "BC",
-        "BP", "BA", "LE", "PP", "PM", "IS", "AP", "PT", "MB", "MN", "MA"
-    ]] = Field(
+    compare_colleges: list[str] | None = Field(default=None, description="List of college names if intent is compare")
+    college_name: str | None = Field(default=None, description="Specific college name")
+    district: str | None = Field(default=None, description="Title Case district (e.g., Chennai, Coimbatore, Salem)")
+    autonomous: Literal["Yes", "No"] | None = Field(default=None)
+    branch_code: Literal["CS", "EC", "ME", "IT", "AD", "CE", "EE", "CH", "AU", "CB", "AL", "SC", "AE", "BM", "BT", "AG", "EV", "IC", "EI", "CY", "FT", "TX", "AM", "CN", "EM", "EY", "EL", "GI", "MD", "MC", "MT", "PC", "PH", "PE", "RM", "SF", "VL", "CD", "CJ", "DA", "DS", "EA", "EF", "EN", "EX", "HT", "IB", "IN", "MM", "MR", "MU", "TC", "TT", "AR", "AS", "BS", "BY", "CC", "CF", "CG", "CI", "CK", "CL", "CM", "FY", "IY", "MF", "MS", "MY", "PN", "PR", "RA", "RI", "SB", "TS", "X", "B*", "AT", "AO", "BC", "BP", "BA", "LE", "PP", "PM", "IS", "AP", "PT", "MB", "MN", "MA"] | None = Field(
         default=None, 
         description="Strict branch code mapping. Examples: Computer Science/CSE->CS, Mechanical->ME, AI&DS->AD, ECE->EC, EEE->EE, IT->IT, Civil->CE, Cyber Security->CY, AI&ML->AL, Bio Medical->BM, Bio Tech->BT, Automobile->AU, Chemical->CH, Aeronautical->AE, Agricultural->AG"
     )
-    nba_accredited: Optional[bool] = Field(default=None)
-    numerical_metric: Optional[Literal[
-        "placement", "pass_percentage", "total_intake", "fees", 
-        "hostel_rent", "transport", "cutoff", "marks"
-    ]] = Field(default=None)
-    numerical_operator: Optional[Literal["highest", "lowest", "greater_than", "less_than"]] = Field(default=None)
-    numerical_value: Optional[float] = Field(default=None, description="Target number if operator is greater_than/less_than")
+    nba_accredited: bool | None = Field(default=None)
+    numerical_metric: Literal["placement", "pass_percentage", "total_intake", "fees", "hostel_rent", "transport", "cutoff", "marks"] | None = Field(default=None)
+    numerical_operator: Literal["highest", "lowest", "greater_than", "less_than"] | None = Field(default=None)
+    numerical_value: float | None = Field(default=None, description="Target number if operator is greater_than/less_than")
 
 class QueryRewriteSchema(BaseModel):
     standalone_question: str = Field(description="The fully resolved standalone question")

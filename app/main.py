@@ -1,24 +1,33 @@
-import logging
-import os
-import math
-import time
 import asyncio
-from datetime import datetime
+import json
+import logging
+import math
+import os
+import time
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from datetime import datetime
+
+from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, HTMLResponse
-from dotenv import load_dotenv
+from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+
+# Rate Limiter
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
 load_dotenv()
 
 from app.models import QueryRequest, QueryResponse, Source
-from app.services.retrieval import retrieve
-from app.services.llm import generate_answer
-from app.services.query_understanding import understand_query, rewrite_query
-from app.services.memory import memory
-from app.services.semantic_cache import check_cache, save_to_cache
 from app.services.database import supabase
+from app.services.llm import generate_answer, generate_answer_stream
+from app.services.memory import memory
+from app.services.observability import RAGTracer
+from app.services.query_understanding import rewrite_query, understand_query
+from app.services.retrieval import retrieve
+from app.services.semantic_cache import check_cache, purge_all_cache, save_to_cache
 
 logging.basicConfig(
     level=logging.INFO,
@@ -26,7 +35,12 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# 🛠️ Universal retry wrapper for ALL Gemini calls
+# ═══════════════════════════════════════════════════════════
+# 🛡️ RATE LIMITER (10 requests per minute per IP)
+# ═══════════════════════════════════════════════════════════
+limiter = Limiter(key_func=get_remote_address, default_limits=["10/minute"])
+
+# 🛠️ Universal retry wrapper for Gemini calls
 RETRY_TOKENS = ("429", "exhausted", "quota", "resource has been", "unavailable", "rate", "deadline")
 
 def _llm_retry(fn, *args, **kwargs):
@@ -62,10 +76,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="TN-Engineering Q/A System API",
-    version="1.0-final",
-    description="AI Counselor for Tamil Nadu Engineering Colleges. Built for Frontend Integration.",
+    version="2.0-production",
+    description="AI Counselor for Tamil Nadu Engineering Colleges. Built for Frontend Integration with SSE Streaming & Grounded Citations.",
     lifespan=lifespan
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -97,7 +114,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={
             "error": "internal_server_error",
-            "message": "The AI counselor is currently experiencing technical difficulties. Please try again in a few seconds."
+            "message": f"Server encountered an error: {type(exc).__name__}: {exc!s}"
         },
     )
 
@@ -112,9 +129,9 @@ def root():
         <title>TNEA Counselor AI API</title>
         <style>
             body { font-family: system-ui, -apple-system, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background: #f4f4f9; color: #333; }
-            .container { text-align: center; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 500px; }
+            .container { text-align: center; background: white; padding: 40px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 520px; }
             h1 { color: #2563eb; }
-            .badge { display: inline-block; background: #10b981; color: white; padding: 5px 10px; border-radius: 20px; font-size: 14px; margin-bottom: 20px; }
+            .badge { display: inline-block; background: #10b981; color: white; padding: 5px 12px; border-radius: 20px; font-size: 14px; margin-bottom: 20px; }
             a { color: #2563eb; text-decoration: none; font-weight: bold; }
             a:hover { text-decoration: underline; }
             .endpoints { text-align: left; background: #f8fafc; padding: 15px; border-radius: 8px; margin-top: 20px; font-family: monospace; font-size: 14px; }
@@ -122,16 +139,16 @@ def root():
     </head>
     <body>
         <div class="container">
-            <span class="badge">🟢 API ONLINE</span>
+            <span class="badge">🟢 API ONLINE (v2.0 Production)</span>
             <h1>🎓 TNEA Counselor AI</h1>
-            <p>The backend API is running successfully.</p>
-            <p>This is a headless API. Please use the interactive documentation below to test endpoints or connect your React frontend.</p>
+            <p>Production RAG API with Hybrid Search, L1/L2 Caching, and Token-by-Token SSE Streaming.</p>
             <div class="endpoints">
                 <strong>Available Routes:</strong><br>
+                🌊 <a href="/docs#/default/chat_chat_post">POST /chat</a> (SSE Token Streaming)<br>
+                💬 <a href="/docs#/default/query_query_post">POST /query</a> (Standard JSON)<br>
                 📚 <a href="/docs">/docs</a> (Swagger UI)<br>
                 🩺 <a href="/health">/health</a> (Status Check)<br>
-                🔥 <a href="/warmup">/warmup</a> (Pre-load Models)<br>
-                💬 <a href="/redoc">/redoc</a> (ReDoc)
+                🔥 <a href="/warmup">/warmup</a> (Pre-load Models)
             </div>
         </div>
     </body>
@@ -140,16 +157,15 @@ def root():
 
 @app.get("/health")
 def health():
-    """Quick health check - responds immediately without loading models"""
     return {
         "status": "healthy",
-        "version": "1.0-final",
+        "version": "2.0-production",
+        "features": ["l1_cache", "l2_semantic_cache", "sse_streaming", "slowapi_rate_limit", "observability_tracing"],
         "timestamp": datetime.utcnow().isoformat()
     }
 
 @app.get("/warmup")
 def warmup():
-    """Pre-load models to avoid cold start on first query. Call this from frontend on page load."""
     try:
         from app.services.retrieval import _load_models
         _load_models()
@@ -160,30 +176,39 @@ def warmup():
         }
     except Exception as e:
         logger.error(f"Warmup failed: {e}")
-        return {
-            "status": "error",
-            "message": str(e)
-        }
+        return {"status": "error", "message": str(e)}
 
 @app.post("/clear_chat/{session_id}")
 def clear_chat(session_id: str):
     memory.clear_history(session_id)
     return {"status": "cleared", "session_id": session_id}
 
+@app.get("/search_colleges")
+def search_colleges(
+    district: str | None = None,
+    branch_code: str | None = None,
+    has_hostel: bool = False,
+    autonomous: bool | None = None,
+    limit: int = 10
+):
+    """Direct college catalog search by district, branch, and facilities."""
+    from app.services.retrieval import get_colleges_by_filters
+    docs = get_colleges_by_filters(district=district, branch_code=branch_code, has_hostel=has_hostel, limit=limit)
+    if autonomous is not None:
+        docs = [d for d in docs if d.get("metadata", {}).get("autonomous") == autonomous]
+    return {
+        "count": len(docs),
+        "results": [d.get("metadata") for d in docs]
+    }
+
 def extract_source_info(doc: dict) -> Source:
     meta = doc.get("metadata", {})
-    doc_type = meta.get("doc_type", "general_info")
+    doc_type = meta.get("doc_type", "college_info")
     
     if doc_type == "admission_info":
         college_name = f"TNEA Rules: {meta.get('section', 'General Information')}"
         tnea_code = "N/A"
         district = "Tamil Nadu"
-        
-    elif doc_type == "branch_info":
-        college_name = meta.get("college_name", f"Branch: {meta.get('branch_code', 'Unknown')} (Code: {meta.get('tnea_code', 'N/A')})")
-        tnea_code = str(meta.get("tnea_code", "N/A"))
-        district = meta.get("district", "N/A")
-        
     else:  
         college_name = meta.get("college_name", "Unknown College")
         tnea_code = str(meta.get("tnea_code", "Unknown"))
@@ -204,7 +229,6 @@ def extract_source_info(doc: dict) -> Source:
     )
 
 def deduplicate_sources(sources: list[Source]) -> list[Source]:
-    """Remove duplicate sources based on tnea_code"""
     seen = set()
     unique = []
     for source in sources:
@@ -233,9 +257,9 @@ def purge_cache(admin_secret: str):
         raise HTTPException(status_code=403, detail="Unauthorized")
         
     try:
-        supabase.table("query_cache").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
-        logger.info("🚨 ADMIN ACTION: Semantic cache completely purged due to data update.")
-        return {"status": "success", "message": "Cache purged. AI will now fetch fresh data."}
+        purge_all_cache()
+        logger.info("🚨 ADMIN ACTION: Semantic & In-memory caches purged.")
+        return {"status": "success", "message": "All caches purged successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -243,129 +267,216 @@ def purge_cache(admin_secret: str):
 def report_bad_answer(question: str):
     try:
         supabase.table("query_cache").delete().eq("question", question).execute()
-        logger.info(f"👎 USER FEEDBACK: Deleted poisoned cache for question: {question[:50]}...")
+        logger.info(f"👎 USER FEEDBACK: Cleared cache for question: {question[:50]}...")
         return {"status": "success", "message": "Feedback recorded. Cache cleared for this question."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# ═══════════════════════════════════════════════════════════
+# 🌊 SERVER-SENT EVENTS (SSE) STREAMING /chat ENDPOINT
+# ═══════════════════════════════════════════════════════════
+@app.post("/chat")
+@limiter.limit("10/minute")
+async def chat(request: Request, req: QueryRequest):
+    """
+    Production Chat Endpoint with Server-Sent Events (SSE) Streaming.
+    Yields tokens incrementally: `data: {"token": "..."}\n\n`
+    Concludes with citation cards: `data: {"sources": [...]}\n\n` followed by `data: [DONE]\n\n`
+    """
+    tracer = RAGTracer(session_id=req.session_id, query=req.question)
+
+    async def sse_stream_generator() -> AsyncGenerator[str, None]:
+        nonlocal tracer
+        try:
+            logger.info(f"🌊 [{req.session_id}] SSE Chat Query: '{req.question}'")
+
+            # 1. Check L1/L2 Caching (Latency < 1ms on repeated questions)
+            cached_response = check_cache(req.question)
+            if cached_response:
+                cached_answer = cached_response.get("answer", "")
+                cached_sources = cached_response.get("sources", [])
+                tracer.log_cache_hit(cached_answer)
+                tracer.finish()
+
+                # Stream cached answer in chunks for natural UI rendering
+                words = cached_answer.split(" ")
+                for i in range(0, len(words), 4):
+                    chunk = " ".join(words[i:i+4]) + " "
+                    yield f"data: {json.dumps({'token': chunk})}\n\n"
+                    await asyncio.sleep(0.01)
+
+                yield f"data: {json.dumps({'sources': cached_sources})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            # 2. Query History & Translation
+            history = memory.get_history(req.session_id)
+            try:
+                search_query = rewrite_query(req.question, history) if history else req.question
+            except Exception as e:
+                logger.warning(f"Query rewriting warning: {e}")
+                search_query = req.question
+
+            # 3. Intent & Filter Understanding
+            try:
+                understood = understand_query(search_query)
+            except Exception:
+                understood = {"intent": "search"}
+
+            intent = understood.pop("intent", "search")
+            if intent in ["list", "filter", "cutoff"] and intent != "cutoff":
+                intent = "search"
+
+            compare_colleges = understood.pop("compare_colleges", None)
+            active_filters = req.filters.copy() if req.filters else {}
+            active_filters.update(understood)
+
+            # 4. Retrieval & Pre-filtering
+            docs, context_data = retrieve(
+                search_query, top_k=req.top_k, filters=active_filters,
+                compare_colleges=compare_colleges, intent=intent, chat_history=history
+            )
+            tracer.log_retrieval(docs, filters=active_filters)
+
+            # Guardrail: No documents retrieved
+            if not docs:
+                safe_msg = context_data if (isinstance(context_data, str) and context_data.strip()) else "The provided TNEA database does not contain information to answer this."
+                tracer.log_llm_call(prompt="None", answer=safe_msg)
+                tracer.finish()
+                yield f"data: {json.dumps({'token': safe_msg})}\n\n"
+                yield f"data: {json.dumps({'sources': []})}\n\n"
+                yield "data: [DONE]\n\n"
+                return
+
+            # 5. Extract Sources
+            sources = [extract_source_info(d) for d in docs]
+            sources = deduplicate_sources(sources)
+            sources_dict = [s.model_dump() if hasattr(s, 'model_dump') else s.dict() for s in sources]
+
+            # 6. Stream Generation Token-by-Token
+            accumulated_tokens = []
+            prompt_preview = f"Context Length: {len(context_data)} chars | Question: {req.question}"
+
+            for token in generate_answer_stream(req.question, context_data, req.session_id, docs=docs):
+                accumulated_tokens.append(token)
+                yield f"data: {json.dumps({'token': token})}\n\n"
+                await asyncio.sleep(0.005) # Cooperative yield
+
+            full_answer = "".join(accumulated_tokens).strip()
+            tracer.log_llm_call(prompt=prompt_preview, answer=full_answer)
+            tracer.finish()
+
+            # 7. Cache Response
+            save_to_cache(req.question, full_answer, sources_dict)
+
+            # 8. Send Sources Metadata & Done Signal
+            yield f"data: {json.dumps({'sources': sources_dict})}\n\n"
+            yield "data: [DONE]\n\n"
+
+        except Exception as e:
+            logger.error(f"Error in SSE stream: {e}", exc_info=True)
+            tracer.log_error(str(e))
+            tracer.finish()
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            yield "data: [DONE]\n\n"
+
+    return StreamingResponse(
+        sse_stream_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+
+# ═══════════════════════════════════════════════════════════
+# 💬 STANDARD JSON /query ENDPOINT
+# ═══════════════════════════════════════════════════════════
 @app.post("/query", response_model=QueryResponse)
-def query(req: QueryRequest):
-    start_time = time.time()
-    cache_used = False
-    intent_detected = "unknown"
+@limiter.limit("10/minute")
+def query(request: Request, req: QueryRequest):
+    tracer = RAGTracer(session_id=req.session_id, query=req.question)
     
     try:
-        logger.info(f"[{req.session_id}] Query: {req.question}")
+        logger.info(f"[{req.session_id}] Standard Query: {req.question}")
 
-        # 1) Fast-path Semantic Cache
+        # 1) Check L1 / L2 Cache
         cached_response = check_cache(req.question)
         if cached_response:
-            cache_used = True
-            logger.info("⚡ Cache HIT! Serving from Semantic Cache (0 LLM calls)")
-            cached_answer = cached_response.get("answer", "") if isinstance(cached_response, dict) else str(cached_response)
+            tracer.log_cache_hit(cached_response.get("answer", ""))
+            tracer.finish()
             memory.add_message(req.session_id, "user", req.question)
-            memory.add_message(req.session_id, "model", cached_answer)
-            
-            duration = time.time() - start_time
-            logger.info(f"✅ Cache response in {duration:.2f}s")
-            
-            response = format_cache_response(cached_response)
-            # Add metadata to response (if your QueryResponse model supports it)
-            return response
+            memory.add_message(req.session_id, "model", cached_response.get("answer", ""))
+            return format_cache_response(cached_response)
 
-        # 2) Get Chat History
+        # 2) Chat History & Query Translation
         history = memory.get_history(req.session_id)
-
-        # 3) HISTORY-AWARE QUERY TRANSLATION
         try:
             search_query = _llm_retry(rewrite_query, req.question, history) if history else req.question
         except Exception as e:
-            logger.warning(f"⚠️ Query rewriting completely failed: {e}")
+            logger.warning(f"Query rewrite warning: {e}")
             search_query = req.question
 
-        # 4) Secondary Cache Check
-        if search_query != req.question:
-            cached_response = check_cache(search_query)
-            if cached_response:
-                cache_used = True
-                logger.info("⚡ Cache HIT on Rewritten Query!")
-                cached_answer = cached_response.get("answer", "") if isinstance(cached_response, dict) else str(cached_response)
-                memory.add_message(req.session_id, "user", req.question)
-                memory.add_message(req.session_id, "model", cached_answer)
-                
-                duration = time.time() - start_time
-                logger.info(f"✅ Cache response (rewritten) in {duration:.2f}s")
-                return format_cache_response(cached_response)
-
-        # 5) Smart routing
+        # 3) Intent & Filters
         try:
             understood = _llm_retry(understand_query, search_query)
-        except Exception as e:
-            logger.warning(f"⚠️ Query understanding completely failed: {e}. Defaulting to search intent.")
+        except Exception:
             understood = {"intent": "search"}
 
         intent = understood.pop("intent", "search")
-        intent_detected = intent
-        logger.info(f"🎯 Intent detected: {intent}")
-        
-        # Map new Pydantic intents to existing retrieval routes
-        if intent in ["list", "filter", "cutoff"]:
-            # cutoff is handled specially in retrieval.py
-            if intent != "cutoff":
-                intent = "search"
-            
+        if intent in ["list", "filter", "cutoff"] and intent != "cutoff":
+            intent = "search"
+
         compare_colleges = understood.pop("compare_colleges", None)
-        
-        # Merge extracted filters into active_filters
         active_filters = req.filters.copy() if req.filters else {}
         active_filters.update(understood)
-        
-        logger.info(f"🔍 Active filters: {active_filters}")
 
-        # 6) Retrieve
+        # 4) Retrieval
         docs, context_data = retrieve(
             search_query, top_k=req.top_k, filters=active_filters,
             compare_colleges=compare_colleges, intent=intent, chat_history=history
         )
+        tracer.log_retrieval(docs, filters=active_filters)
 
-        # CRITICAL GUARDRAIL: Block LLM if retrieval fails
+        # Guardrail: No data
         if not docs:
-            logger.warning("⚠️ No documents retrieved. Blocking LLM to prevent hallucination.")
-            safe_answer = context_data if isinstance(context_data, str) else "I don't have enough specific information in my database to answer this accurately."
+            safe_answer = context_data if isinstance(context_data, str) else "The provided TNEA database does not contain information to answer this."
+            tracer.log_llm_call(prompt="None", answer=safe_answer)
+            tracer.finish()
             memory.add_message(req.session_id, "user", req.question)
             memory.add_message(req.session_id, "model", safe_answer)
-            
-            duration = time.time() - start_time
-            logger.info(f"✅ No-data response in {duration:.2f}s")
             return QueryResponse(answer=safe_answer, sources=[])
 
-        # 7) Generate Answer
+        # 5) Generate Answer with Grounded Citations
+        prompt_preview = f"Context Length: {len(context_data)} chars | Question: {req.question}"
         try:
             answer = _llm_retry(generate_answer, req.question, context_data, req.session_id, 
-                               reference_answer=None, intent=intent)
+                               reference_answer=None, intent=intent, docs=docs)
         except Exception as e:
-            logger.error(f"🚨 LLM Generation completely failed (Quota/Deprecation): {e}")
-            answer = "I'm sorry, I'm currently experiencing high demand or technical difficulties. Please try again in a few minutes."
+            logger.error(f"🚨 LLM Generation failed: {e}", exc_info=True)
+            answer = f"Error: LLM Generation failed with error: {type(e).__name__}: {e!s}"
 
-        # 8) Smart Source Extraction + Deduplication
+        tracer.log_llm_call(prompt=prompt_preview, answer=answer)
+        tracer.finish()
+
+        # 6) Deduplicate Sources
         sources = [extract_source_info(d) for d in docs]
         sources = deduplicate_sources(sources)
 
-        # 9) Save to cache 
+        # 7) Save to Cache & Memory
         sources_dict = [s.model_dump() if hasattr(s, 'model_dump') else s.dict() for s in sources]
         save_to_cache(req.question, answer, sources_dict)
-        if search_query != req.question:
-            save_to_cache(search_query, answer, sources_dict)
 
-        # 10) Save to memory
         memory.add_message(req.session_id, "user", req.question)
         memory.add_message(req.session_id, "model", answer)
-
-        duration = time.time() - start_time
-        logger.info(f"✅ Query completed in {duration:.2f}s | Intent: {intent_detected} | Sources: {len(sources)}")
 
         return QueryResponse(answer=answer, sources=sources)
 
     except Exception as e:
+        tracer.log_error(str(e))
+        tracer.finish()
         logger.error(f"Error in /query endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

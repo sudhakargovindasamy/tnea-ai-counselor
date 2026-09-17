@@ -1,15 +1,17 @@
-import sys
 import os
+import sys
 
 # Fix: Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from app.services.database import supabase
-from sentence_transformers import SentenceTransformer
 import pandas as pd
 
 # Load environment variables
 from dotenv import load_dotenv
+from sentence_transformers import SentenceTransformer
+
+from app.services.database import supabase
+
 load_dotenv()
 
 # Load embedding model

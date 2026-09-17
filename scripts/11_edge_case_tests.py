@@ -6,8 +6,12 @@ Usage:
 Optional:
     ADMIN_SECRET_KEY=xxx python scripts/11_edge_case_tests.py   (enables purge test)
 """
-import os, sys, time, uuid
+import os
+import sys
+import time
+import uuid
 from concurrent.futures import ThreadPoolExecutor
+
 import requests
 
 BASE = os.getenv("API_BASE", "http://127.0.0.1:8000").rstrip("/")

@@ -3,6 +3,7 @@
 Analyzes and verifies the integrity of data in Supabase.
 """
 import os
+
 from dotenv import load_dotenv
 from supabase import create_client
 

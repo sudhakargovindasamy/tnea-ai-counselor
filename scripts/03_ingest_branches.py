@@ -1,8 +1,10 @@
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import pandas as pd
+
 from app.services.database import supabase
 
 print("Loading branches...")

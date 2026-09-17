@@ -4,8 +4,9 @@ Ingests TNEA Admission Information (JSON) into Supabase vector DB.
 Handles nested JSON by recursively flattening into readable text.
 """
 
-import os
 import json
+import os
+
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 from supabase import create_client

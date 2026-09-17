@@ -1,9 +1,9 @@
-from typing import List, Dict
 from collections import deque
+
 
 class ChatMemory:
     def __init__(self, max_turns: int = 5):
-        self.store: Dict[str, deque] = {}
+        self.store: dict[str, deque] = {}
         self.max_messages = max_turns * 2
 
     def add_message(self, session_id: str, role: str, content: str):
@@ -11,7 +11,7 @@ class ChatMemory:
             self.store[session_id] = deque(maxlen=self.max_messages)
         self.store[session_id].append({"role": role, "parts": [{"text": content}]})
 
-    def get_history(self, session_id: str) -> List[Dict]:
+    def get_history(self, session_id: str) -> list[dict]:
         return list(self.store.get(session_id, []))
 
     def clear_history(self, session_id: str):

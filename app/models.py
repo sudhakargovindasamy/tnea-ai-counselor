@@ -1,12 +1,14 @@
+from typing import Any
+
 from pydantic import BaseModel, Field, validator
-from typing import List, Optional, Dict, Any
 
 
 class QueryRequest(BaseModel):
     session_id: str
     question: str
     top_k: int = Field(default=5, description="Number of sources (1-20)")
-    filters: Optional[Dict[str, Any]] = None
+    filters: dict[str, Any] | None = None
+    stream: bool | None = Field(default=True, description="Enable SSE token streaming")
 
     # 🛡️ Validator works with both Pydantic v1 and v2
     @validator('top_k')
@@ -25,4 +27,4 @@ class Source(BaseModel):
 
 class QueryResponse(BaseModel):
     answer: str
-    sources: List[Source]
+    sources: list[Source]

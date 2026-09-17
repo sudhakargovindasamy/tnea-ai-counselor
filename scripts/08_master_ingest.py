@@ -1,176 +1,140 @@
 """
 08_master_ingest.py
-The Master Ingestion Script (Production Ready).
-Uses all-MiniLM-L6-v2 (384-dim) for Render Free-Tier compatibility.
-Enriches branch metadata with college names and districts for accurate filtering.
+Master Ingestion Script for TNEA Counselor RAG System.
+Uses sentence-transformers/all-MiniLM-L6-v2 (384-dim) for fast embeddings and low memory footprint.
+Ingests consolidated, denormalized college documents and admission documents into Supabase.
 """
-import os
+
 import json
-import pandas as pd
 import logging
+import os
+import sys
+import gc
+
 from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 from supabase import create_client
 
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
 load_dotenv()
-supabase = create_client(os.getenv("SUPABASE_URL"), os.getenv("SUPABASE_KEY"))
+supabase_url = os.getenv("SUPABASE_URL")
+supabase_key = os.getenv("SUPABASE_KEY")
+
+if not supabase_url or not supabase_key:
+    logger.error("❌ SUPABASE_URL and SUPABASE_KEY must be set in environment.")
+    sys.exit(1)
+
+supabase = create_client(supabase_url, supabase_key)
 logger.info("✅ Connected to Supabase")
 
-# ==========================================
-# 1. SAFETY WIPE (Clear old bad data)
-# ==========================================
-print("\n" + "="*60)
-print("⚠️  WARNING: This will wipe 'documents' and 'admission_documents'.")
-print("="*60)
+# ═══════════════════════════════════════════════════════════
+# 1. LOAD EMBEDDING MODEL
+# ═══════════════════════════════════════════════════════════
+EXPECTED_DIMENSIONS = 384
+logger.info(f"🧠 Loading sentence-transformers/all-MiniLM-L6-v2 ({EXPECTED_DIMENSIONS}-dim)...")
+model = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+
+def embed_and_upload(table_name: str, texts: list, metadatas: list, batch_size: int = 50):
+    logger.info(f"🧠 Generating embeddings for {len(texts)} records...")
+    # normalize_embeddings=True is required for cosine similarity via dot product
+    embeddings = model.encode(texts, show_progress_bar=True, normalize_embeddings=True)
+    
+    # 🚨 Pre-flight dimension check
+    if len(embeddings[0]) != EXPECTED_DIMENSIONS:
+        logger.error(f"❌ Dimension mismatch! Model output {len(embeddings[0])} but expected {EXPECTED_DIMENSIONS}.")
+        logger.error("   Ensure your Supabase table uses VECTOR(384).")
+        sys.exit(1)
+
+    records = [
+        {"content": t, "metadata": m, "embedding": e.tolist()}
+        for t, m, e in zip(texts, metadatas, embeddings)
+    ]
+    
+    # 🧹 Free up memory after encoding
+    del embeddings
+    gc.collect()
+
+    logger.info(f"📤 Uploading {len(records)} records to '{table_name}' in batches of {batch_size}...")
+    success_count = 0
+    for i in range(0, len(records), batch_size):
+        batch = records[i:i + batch_size]
+        try:
+            supabase.table(table_name).insert(batch).execute()
+            success_count += len(batch)
+            logger.info(f"   Uploaded {success_count}/{len(records)}")
+        except Exception as e:
+            logger.error(f"❌ Failed to upload batch {i}-{i+batch_size}: {e}")
+            logger.error(f"   First record metadata: {batch[0]['metadata']}")
+
+def wipe_table(table_name: str):
+    """Safely wipes a table, handling both BIGINT and UUID primary keys."""
+    logger.info(f"🗑️  Wiping '{table_name}' table...")
+    try:
+        # Try BIGINT wipe first (most common for documents)
+        supabase.table(table_name).delete().neq("id", 0).execute()
+    except Exception:
+        try:
+            # Fallback to UUID wipe (common for query_cache)
+            supabase.table(table_name).delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
+        except Exception as e:
+            logger.warning(f"⚠️ Could not wipe {table_name} (it might be empty or have strict RLS): {e}")
+
+# ═══════════════════════════════════════════════════════════
+# 2. SAFETY WIPE CONFIRMATION
+# ═══════════════════════════════════════════════════════════
+print("\n" + "=" * 60)
+print("⚠️  WARNING: This will wipe and re-ingest the following tables:")
+print("   - documents")
+print("   - admission_documents")
+print("   - query_cache (Clears old cached answers)")
+print("=" * 60)
 confirm = input("Type 'YES' to wipe tables and re-upload: ")
 
 if confirm.strip().upper() != "YES":
     logger.info("Aborted by user.")
-    exit(0)
+    sys.exit(0)
 
-logger.info("🗑️  Wiping 'documents' table...")
-supabase.table("documents").delete().neq("id", 0).execute()
-logger.info("🗑️  Wiping 'admission_documents' table...")
-try:
-    supabase.table("admission_documents").delete().neq("id", 0).execute()
-except Exception:
-    pass
+wipe_table("documents")
+wipe_table("admission_documents")
+wipe_table("query_cache") # 🚨 CRITICAL: Clear semantic cache so old answers aren't served
 
-# ==========================================
-# 2. LOAD EMBEDDING MODEL (384-dim for 512MB RAM limit)
-# ==========================================
-logger.info("🧠 Loading all-MiniLM-L6-v2 (384-dim)...")
-model = SentenceTransformer("all-MiniLM-L6-v2")
+# ═══════════════════════════════════════════════════════════
+# 3. LOAD PROCESSED DENORMALIZED DATA
+# ═══════════════════════════════════════════════════════════
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+college_json = os.path.join(BASE_DIR, "data", "processed", "college_documents.json")
+adm_json = os.path.join(BASE_DIR, "data", "processed", "admission_documents.json")
 
-def embed_and_upload(table_name, texts, metadatas, batch_size=50):
-    logger.info(f"🧠 Generating embeddings for {len(texts)} records...")
-    embeddings = model.encode(texts, show_progress_bar=True, normalize_embeddings=True)
-    
-    records = [{"content": t, "metadata": m, "embedding": e.tolist()} 
-               for t, m, e in zip(texts, metadatas, embeddings)]
-        
-    logger.info(f"📤 Uploading {len(records)} records to '{table_name}'...")
-    for i in range(0, len(records), batch_size):
-        batch = records[i:i+batch_size]
-        try:
-            supabase.table(table_name).insert(batch).execute()
-            logger.info(f"   Uploaded {min(i+batch_size, len(records))}/{len(records)}")
-        except Exception as e:
-            logger.error(f"Failed to upload batch {i}: {e}")
+# Ensure processed files exist; if not, run preprocessing
+if not os.path.exists(college_json):
+    logger.info("⚙️ Processed data not found. Running scripts/preprocess_data.py...")
+    import subprocess
+    # 🚨 Use sys.executable to ensure it runs in the active virtual environment
+    subprocess.run([sys.executable, os.path.join(BASE_DIR, "scripts", "preprocess_data.py")], check=True)
 
-# Helper to find files whether they are in root or data/raw/
-def get_path(filename):
-    return f"data/raw/{filename}" if os.path.exists(f"data/raw/{filename}") else filename
+with open(college_json, "r", encoding="utf-8") as f:
+    colleges_data = json.load(f)
 
-# ==========================================
-# 3. INGEST COLLEGES
-# ==========================================
-logger.info("\n📊 Processing Colleges...")
-df_c = pd.read_csv(get_path("colleges_db_df.csv")).fillna("")
+c_texts = [d["content"] for d in colleges_data]
+c_metas = [d["metadata"] for d in colleges_data]
 
-c_texts, c_metas = [], []
-for _, r in df_c.iterrows():
-    text = f"College Name: {r['college_name']}\nTNEA Code: {r['tnea_code']}\nDistrict: {r['district']}\n"
-    text += f"Address: {r['address']}, {r['taluk']}, {r['district']} - {r['pincode']}\n"
-    text += f"Autonomous: {r['autonomous_status']} | Placement: {r['placement']}%\n"
-    text += f"\nHostel Facilities:\n"
-    text += f"  Boys: {r['hostel_facilities_boys']} (Accommodation: {r['accommodation_ug_boys']}, Type: {r['permanent_or_rental_boys']})\n"
-    text += f"  Girls: {r['hostel_facilities_girls']} (Accommodation: {r['accommodation_ug_girls']}, Type: {r['permanent_or_rental_girls']})\n"
-    text += f"  Mess Bill (Boys): {r['mess_bill_boys']}, (Girls): {r['mess_bill_girls']}\n"
-    text += f"  Room Rent (Boys): {r['room_rent_boys']}, (Girls): {r['room_rent_girls']}\n"
-    text += f"  Transport: {r['transport_facilities']} (Min: {r['min_transport_charges']}, Max: {r['max_transport_charges']})\n"
-    
-    c_texts.append(text)
-    c_metas.append({
-        "doc_type": "college_info", 
-        "source": "colleges_db_df.csv", 
-        "tnea_code": str(r["tnea_code"]), 
-        "college_name": str(r["college_name"]), 
-        "district": str(r["district"]).strip().title() # Normalize district casing
-    })
+logger.info(f"\n📊 Ingesting {len(c_texts)} Denormalized College Documents...")
+embed_and_upload("documents", c_texts, c_metas, batch_size=40)
 
-embed_and_upload("documents", c_texts, c_metas)
-
-# ==========================================
-# 4. INGEST BRANCHES (Enriched with College Metadata)
-# ==========================================
-logger.info("\n📊 Processing Branches...")
-df_b = pd.read_csv(get_path("branches_db_df.csv")).fillna("")
-
-# Create a lookup dictionary from colleges to enrich branch metadata
-college_lookup = {
-    str(row["tnea_code"]): {
-        "college_name": str(row["college_name"]),
-        "district": str(row["district"]).strip().title()
-    }
-    for _, row in df_c.iterrows()
-}
-
-b_texts, b_metas = [], []
-for _, r in df_b.iterrows():
-    tnea_code = str(r['tnea_code'])
-    college_info = college_lookup.get(tnea_code, {"college_name": "Unknown", "district": "Unknown"})
-    
-    text = f"College: {college_info['college_name']} (TNEA: {tnea_code})\n"
-    text += f"Branch Code: {r['branch_code']}\n"
-    text += f"Approved Intake: {r['approved_intake']} seats\nYear of Starting: {r['year_of_starting']}\n"
-    text += f"NBA Accredited: {r['nba_accredited']}\n"
-    if r.get('accreditation_valid_upto'): text += f"Valid Upto: {r['accreditation_valid_upto']}\n"
-    if r.get('approval_note'): text += f"Note: {r['approval_note']}\n"
-        
-    b_texts.append(text)
-    b_metas.append({
-        "doc_type": "branch_info", 
-        "source": "branches_db_df.csv", 
-        "tnea_code": tnea_code, 
-        "branch_code": str(r["branch_code"]),
-        "college_name": college_info["college_name"],
-        "district": college_info["district"],
-        "nba_accredited": str(r["nba_accredited"]).strip().lower() == "yes" # Boolean for strict filtering
-    })
-
-embed_and_upload("documents", b_texts, b_metas)
-
-# ==========================================
-# 5. INGEST ADMISSION INFO
-# ==========================================
-logger.info("\n📊 Processing Admission Info...")
-try:
-    with open(get_path("tnea_admission_info.json"), "r", encoding="utf-8") as f:
+# Ingest Admission Rules
+if os.path.exists(adm_json):
+    with open(adm_json, "r", encoding="utf-8") as f:
         adm_data = json.load(f)
-except FileNotFoundError:
-    logger.warning("⚠️ tnea_admission_info.json not found. Skipping admission rules ingestion.")
-    adm_data = []
 
-def flatten(k, v, indent=0):
-    lines, prefix = [], "  " * indent
-    if isinstance(v, dict):
-        lines.append(f"{prefix}{k}:")
-        for sk, sv in v.items(): lines.extend(flatten(sk, sv, indent + 1))
-    elif isinstance(v, list):
-        lines.append(f"{prefix}{k}: {', '.join(str(i) for i in v)}")
-    else:
-        lines.append(f"{prefix}{k}: {v}")
-    return lines
+    a_texts = [d["content"] for d in adm_data]
+    a_metas = [d["metadata"] for d in adm_data]
 
-a_texts, a_metas = [], []
-for entry in adm_data:
-    lines = [f"Topic: {entry.get('section', 'General')}"]
-    for k, v in entry.get("content", {}).items(): 
-        lines.extend(flatten(k, v))
-    
-    a_texts.append("\n".join(lines))
-    a_metas.append({
-        "doc_type": "admission_info", 
-        "source": "tnea_admission_info.json", 
-        "section": entry.get("section", "General")
-    })
-
-if a_texts:
-    embed_and_upload("admission_documents", a_texts, a_metas)
+    logger.info(f"\n📊 Ingesting {len(a_texts)} Admission Documents...")
+    embed_and_upload("admission_documents", a_texts, a_metas, batch_size=20)
+else:
+    logger.warning("⚠️ admission_documents.json not found. Skipping admission rules ingestion.")
 
 logger.info("\n🎉 MASTER INGESTION COMPLETE!")
-logger.info("✅ 384-dim vectors uploaded. System is ready for Render deployment.")
+logger.info(f"✅ Successfully uploaded {len(c_texts)} college profiles and admission documents.")

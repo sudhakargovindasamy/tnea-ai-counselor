@@ -5,6 +5,7 @@ Adds doc_type to existing records based on their metadata structure.
 - Records without 'branch_code' but with 'college_name' → college_info
 """
 import os
+
 from dotenv import load_dotenv
 from supabase import create_client
 
@@ -38,7 +39,7 @@ for record in records:
     else:
         unknown_ids.append(record_id)
 
-print(f"\n📊 Analysis Results:")
+print("\n📊 Analysis Results:")
 print(f"   🏫 College Info: {len(college_ids)} records")
 print(f"   🎓 Branch Info: {len(branch_ids)} records")
 print(f"   ❓ Unknown: {len(unknown_ids)} records")

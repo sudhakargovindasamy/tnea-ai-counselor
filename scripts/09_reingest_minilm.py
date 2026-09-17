@@ -3,13 +3,14 @@ Re-ingest with all-MiniLM-L6-v2 (384 dims) - FIXED VERSION
 Fix 1: global supabase declaration (kills UnboundLocalError)
 Fix 2: recursive flattening of nested admission JSON dicts into text
 """
-import os
 import json
+import os
 import time
+
 import pandas as pd
+from dotenv import load_dotenv
 from sentence_transformers import SentenceTransformer
 from supabase import create_client
-from dotenv import load_dotenv
 
 load_dotenv()
 

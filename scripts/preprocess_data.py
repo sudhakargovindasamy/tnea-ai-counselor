@@ -1,28 +1,38 @@
-import pandas as pd
+"""
+scripts/preprocess_data.py
+Data Denormalization & Preprocessing for TNEA Counselor RAG System.
+
+Merges colleges_db_df.csv, branches_db_df.csv, and performance_db_df.csv
+into ONE unified, rich document per college (tnea_code).
+Also converts tnea_admission_info.json into structured admission_info documents.
+"""
+
 import json
 import os
-import re
+from typing import Any
+
+import pandas as pd
 
 # ═══════════════════════════════════════════════════════════
-# 1. SETUP PATHS
+# 1. PATH RESOLUTION
 # ═══════════════════════════════════════════════════════════
-BASE_DIR = "/home/sudhakar/Intern/RAG-final"
-RAW_DIR = os.path.join(BASE_DIR, "data/raw")
-PROCESSED_DIR = os.path.join(BASE_DIR, "data/processed")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RAW_DIR = os.path.join(BASE_DIR, "data", "raw")
+PROCESSED_DIR = os.path.join(BASE_DIR, "data", "processed")
 os.makedirs(PROCESSED_DIR, exist_ok=True)
 
-print("📥 Loading raw CSV files...")
-colleges_df = pd.read_csv(os.path.join(RAW_DIR, "colleges_db_df.csv"))
-branches_df = pd.read_csv(os.path.join(RAW_DIR, "branches_db_df.csv"))
-
-colleges_df = colleges_df.fillna("")
-branches_df = branches_df.fillna("")
-
-print(f"   → Colleges: {len(colleges_df)} rows")
-print(f"   → Branches: {len(branches_df)} rows")
+def find_raw_file(filename: str) -> str:
+    """Find file in data/raw/ or root directory."""
+    p1 = os.path.join(RAW_DIR, filename)
+    if os.path.exists(p1):
+        return p1
+    p2 = os.path.join(BASE_DIR, filename)
+    if os.path.exists(p2):
+        return p2
+    return filename
 
 # ═══════════════════════════════════════════════════════════
-# 2. DISTRICT NORMALIZATION (Fix spelling variants)
+# 2. NORMALIZATION & MAPPINGS
 # ═══════════════════════════════════════════════════════════
 DISTRICT_NORMALIZATION = {
     "kancheepuram": "Kanchipuram",
@@ -40,19 +50,24 @@ DISTRICT_NORMALIZATION = {
     "tirupattur": "Tirupattur",
     "the nilgiris": "The Nilgiris",
     "nilgiris": "The Nilgiris",
+    "thiruvallur": "Tiruvallur",
+    "tiruvallur": "Tiruvallur",
+    "thiruvannamalai": "Tiruvannamalai",
+    "tiruvannamalai": "Tiruvannamalai",
+    "thiruvarur": "Tiruvarur",
+    "tiruvarur": "Tiruvarur",
+    "thirunelveli": "Tirunelveli",
+    "tirunelveli": "Tirunelveli",
 }
 
-def normalize_district(raw_district: str) -> str:
-    """Normalize district name to fix spelling variants."""
-    if not raw_district or not str(raw_district).strip():
+def normalize_district(raw_district: Any) -> str:
+    """Standardize district name to title case and resolve spelling variants."""
+    if pd.isna(raw_district) or not str(raw_district).strip():
         return "Unknown"
     cleaned = str(raw_district).strip().title()
     lookup = cleaned.lower()
     return DISTRICT_NORMALIZATION.get(lookup, cleaned)
 
-# ═══════════════════════════════════════════════════════════
-# 3. BRANCH CODE → FULL NAME MAPPING
-# ═══════════════════════════════════════════════════════════
 BRANCH_MAP = {
     "CS": "Computer Science and Engineering",
     "EC": "Electronics and Communication Engineering",
@@ -152,195 +167,352 @@ BRANCH_MAP = {
 }
 
 def get_branch_full_name(code: str) -> str:
-    """Map branch code to full name."""
-    code = str(code).strip().upper()
-    return BRANCH_MAP.get(code, f"Engineering ({code})")
+    """Return full branch name for given code."""
+    c = str(code).strip().upper()
+    return BRANCH_MAP.get(c, f"Engineering ({c})")
 
 # ═══════════════════════════════════════════════════════════
-# 4. CREATE COLLEGE_INFO DOCUMENTS
+# 3. LOAD RAW DATA
 # ═══════════════════════════════════════════════════════════
-print("\n📝 Creating college_info documents...")
+print("📥 Loading raw datasets...")
+colleges_path = find_raw_file("colleges_db_df.csv")
+branches_path = find_raw_file("branches_db_df.csv")
+perf_path = find_raw_file("performance_db_df.csv")
+adm_path = find_raw_file("tnea_admission_info.json")
+
+colleges_df = pd.read_csv(colleges_path).fillna("")
+branches_df = pd.read_csv(branches_path).fillna("")
+perf_df = pd.read_csv(perf_path).fillna("")
+
+print(f"   ✓ Colleges loaded: {len(colleges_df)} rows from {colleges_path}")
+print(f"   ✓ Branches loaded: {len(branches_df)} rows from {branches_path}")
+print(f"   ✓ Performance loaded: {len(perf_df)} rows from {perf_path}")
+
+# Pre-index branches by tnea_code
+branches_by_tnea: dict[str, list[dict[str, Any]]] = {}
+for _, row in branches_df.iterrows():
+    t_code = str(row["tnea_code"]).strip()
+    if not t_code:
+        continue
+    branches_by_tnea.setdefault(t_code, []).append({
+        "sl_no": row["sl_no"],
+        "branch_code": str(row["branch_code"]).strip().upper(),
+        "approved_intake": int(float(row["approved_intake"])) if str(row["approved_intake"]).strip() else 0,
+        "year_of_starting": int(float(row["year_of_starting"])) if str(row["year_of_starting"]).strip() else None,
+        "nba_accredited": str(row["nba_accredited"]).strip().lower() in ["yes", "true", "1"],
+        "accreditation_valid_upto": str(row["accreditation_valid_upto"]).strip(),
+        "approval_note": str(row["approval_note"]).strip()
+    })
+
+# Pre-index performance by tnea_code
+perf_by_tnea: dict[str, dict[str, Any]] = {}
+for _, row in perf_df.iterrows():
+    t_code = str(row["tnea_code"]).strip()
+    if not t_code:
+        continue
+    # Keep highest appeared if multiple records exist
+    appeared = int(float(row["total_appeared"])) if str(row["total_appeared"]).strip() else 0
+    passed = int(float(row["total_passed"])) if str(row["total_passed"]).strip() else 0
+    pass_pct = float(row["pass_percentage"]) if str(row["pass_percentage"]).strip() else 0.0
+    
+    if t_code not in perf_by_tnea or appeared > perf_by_tnea[t_code]["total_appeared"]:
+        perf_by_tnea[t_code] = {
+            "total_appeared": appeared,
+            "total_passed": passed,
+            "pass_percentage": pass_pct,
+            "college_name_perf": str(row["college_name"]).strip(),
+            "district_perf": normalize_district(row["district"])
+        }
+
+# ═══════════════════════════════════════════════════════════
+# 4. CREATE DENORMALIZED COLLEGE DOCUMENTS
+# ═══════════════════════════════════════════════════════════
+print("\n🏗️ Denormalizing data into rich college documents...")
 
 college_documents = []
 
-for _, row in colleges_df.iterrows():
-    district = normalize_district(row['district'])
+for _, r in colleges_df.iterrows():
+    tnea_code = str(r["tnea_code"]).strip()
+    if not tnea_code:
+        continue
+
+    college_name = str(r["college_name"]).strip()
+    district = normalize_district(r["district"])
+    taluk = str(r["taluk"]).strip()
+    address = str(r["address"]).strip()
+    pincode = str(r["pincode"]).strip()
+    dean_principal = str(r["dean_principal"]).strip()
+    phone_fax = str(r["phone_fax"]).strip()
+    email_id = str(r["email_id"]).strip()
+    website = str(r["website"]).strip()
+    anti_ragging = str(r["anti_ragging_phone_no"]).strip()
     
-    # Build rich text content
-    text = f"College Name: {row['college_name']}\n"
-    text += f"TNEA Code: {row['tnea_code']}\n"
-    text += f"District: {district}\n"
-    text += f"Taluk: {row['taluk']}\n"
-    text += f"Address: {row['address']}\n"
-    text += f"Pincode: {row['pincode']}\n"
-    text += f"Principal: {row['dean_principal']}\n"
-    text += f"Phone: {row['phone_fax']}\n"
-    text += f"Email: {row['email_id']}\n"
-    text += f"Website: {row['website']}\n"
-    text += f"Anti-Ragging Helpline: {row['anti_ragging_phone_no']}\n"
-    text += f"Autonomous Status: {row['autonomous_status']}\n"
-    text += f"Minority Status: {row['minority_status']}\n"
+    # Autonomous & Minority
+    autonomous_bool = str(r["autonomous_status"]).strip().lower() in ["yes", "true", "1"]
+    minority_status = str(r["minority_status"]).strip() or "No"
     
-    if row['placement']:
-        text += f"Placement Rate: {row['placement']}%\n"
+    # Placement
+    placement_val = float(r["placement"]) if str(r["placement"]).strip() else 0.0
     
-    text += f"Hostel Facilities: Boys ({row['hostel_facilities_boys']}), Girls ({row['hostel_facilities_girls']})\n"
-    text += f"Accommodation UG: Boys ({row['accommodation_ug_boys']}), Girls ({row['accommodation_ug_girls']})\n"
-    text += f"Hostel Type: Boys ({row['permanent_or_rental_boys']}), Girls ({row['permanent_or_rental_girls']})\n"
-    text += f"Mess Type: Boys ({row['mess_type_boys']}), Girls ({row['mess_type_girls']})\n"
+    # Hostels & Fees
+    boys_hostel = str(r["hostel_facilities_boys"]).strip() or "N/A"
+    girls_hostel = str(r["hostel_facilities_girls"]).strip() or "N/A"
+    mess_boys = str(r["mess_bill_boys"]).strip()
+    mess_girls = str(r["mess_bill_girls"]).strip()
+    room_boys = str(r["room_rent_boys"]).strip()
+    room_girls = str(r["room_rent_girls"]).strip()
+    electricity_boys = str(r["electricity_charges_boys"]).strip()
+    electricity_girls = str(r["electricity_charges_girls"]).strip()
+    caution_deposit = str(r["caution_deposit"]).strip()
+    establishment = str(r["establishment_charges"]).strip()
+    admission_fee = str(r["admission_fees"]).strip()
+    transport = str(r["transport_facilities"]).strip() or "N/A"
+    min_transport = str(r["min_transport_charges"]).strip()
+    max_transport = str(r["max_transport_charges"]).strip()
     
-    if row['mess_bill_boys']:
-        text += f"Mess Bill: Boys (₹{row['mess_bill_boys']}), Girls (₹{row['mess_bill_girls']})\n"
-    if row['room_rent_boys']:
-        text += f"Room Rent: Boys (₹{row['room_rent_boys']}), Girls (₹{row['room_rent_girls']})\n"
-    if row['electricity_charges_boys']:
-        text += f"Electricity Charges: Boys (₹{row['electricity_charges_boys']}), Girls (₹{row['electricity_charges_girls']})\n"
-    if row['caution_deposit']:
-        text += f"Caution Deposit: ₹{row['caution_deposit']}\n"
-    if row['establishment_charges']:
-        text += f"Establishment Charges: ₹{row['establishment_charges']}\n"
-    if row['admission_fees']:
-        text += f"Admission Fees: ₹{row['admission_fees']}\n"
-    
-    text += f"Transport Facilities: {row['transport_facilities']}\n"
-    if row['min_transport_charges']:
-        text += f"Transport Charges: ₹{row['min_transport_charges']} to ₹{row['max_transport_charges']}\n"
-    
-    text += f"Distance from District HQ: {row['distance_from_district_hq']} km\n"
-    text += f"Nearest Railway Station: {row['nearest_railway_station']} ({row['distance_from_railway_station']} km)\n"
-    
-    # Build metadata
+    # Distances
+    dist_hq = str(r["distance_from_district_hq"]).strip()
+    railway_stn = str(r["nearest_railway_station"]).strip()
+    railway_dist = str(r["distance_from_railway_station"]).strip()
+
+    # ── Branches ──
+    college_branches = branches_by_tnea.get(tnea_code, [])
+    branch_codes = []
+    branches_summary_parts = []
+    branches_detailed_lines = []
+    total_approved_intake = 0
+
+    for b in college_branches:
+        b_code = b["branch_code"]
+        if b_code and b_code not in branch_codes:
+            branch_codes.append(b_code)
+        
+        intake = b["approved_intake"]
+        total_approved_intake += intake
+        branches_summary_parts.append(f"{b_code} (Intake {intake})")
+        
+        nba_str = "NBA: Accredited" if b["nba_accredited"] else "NBA: No"
+        if b["accreditation_valid_upto"]:
+            nba_str += f" (Valid till {b['accreditation_valid_upto']})"
+        
+        b_full = get_branch_full_name(b_code)
+        branches_detailed_lines.append(
+            f"  - {b_code}: {b_full} | Intake: {intake} seats | {nba_str}"
+        )
+
+    branches_summary_str = ", ".join(branches_summary_parts) if branches_summary_parts else "None listed"
+
+    # ── Performance ──
+    perf_data = perf_by_tnea.get(tnea_code)
+    if perf_data:
+        pass_pct = perf_data["pass_percentage"]
+        perf_summary_str = f"{pass_pct}% pass ({perf_data['total_passed']}/{perf_data['total_appeared']} students passed)"
+    else:
+        pass_pct = 0.0
+        perf_summary_str = "N/A"
+
+    # ── Build Rich Document Text ──
+    # Exact required format: "College: X. District: Y. Branches: CS (Intake 60), AD (Intake 30). Performance: 85% pass."
+    doc_lines = [
+        f"College: {college_name}. District: {district}. Branches: {branches_summary_str}. Performance: {perf_summary_str}.",
+        f"TNEA Code: {tnea_code}",
+        f"Autonomous Status: {'Yes' if autonomous_bool else 'No'} | Minority Status: {minority_status}",
+        f"Address: {address}, Taluk: {taluk}, District: {district} - {pincode}",
+        f"Dean/Principal: {dean_principal} | Phone: {phone_fax} | Email: {email_id} | Website: {website}",
+        f"Anti-Ragging Helpline: {anti_ragging}"
+    ]
+
+    if placement_val > 0:
+        doc_lines.append(f"Placement Rate: {placement_val}%")
+
+    if perf_data:
+        doc_lines.append(
+            f"Academic Performance: Pass Rate {perf_data['pass_percentage']}% "
+            f"(Passed: {perf_data['total_passed']} out of {perf_data['total_appeared']} appeared in Anna University exams)"
+        )
+
+    # Detailed Branch Section
+    if branches_detailed_lines:
+        doc_lines.append(f"Branches Offered ({len(branch_codes)} branches, Total Intake: {total_approved_intake} seats):")
+        doc_lines.extend(branches_detailed_lines)
+
+    # Hostel and Amenities Section
+    hostel_info = []
+    if boys_hostel and boys_hostel != "N/A":
+        hostel_info.append(f"Boys Hostel: {boys_hostel}")
+    if girls_hostel and girls_hostel != "N/A":
+        hostel_info.append(f"Girls Hostel: {girls_hostel}")
+    if mess_boys:
+        hostel_info.append(f"Mess Bill Boys: ₹{mess_boys}")
+    if mess_girls:
+        hostel_info.append(f"Mess Bill Girls: ₹{mess_girls}")
+    if room_boys:
+        hostel_info.append(f"Room Rent Boys: ₹{room_boys}")
+    if room_girls:
+        hostel_info.append(f"Room Rent Girls: ₹{room_girls}")
+    if caution_deposit:
+        hostel_info.append(f"Caution Deposit: ₹{caution_deposit}")
+    if establishment:
+        hostel_info.append(f"Establishment Charges: ₹{establishment}")
+    if admission_fee:
+        hostel_info.append(f"Admission Fees: ₹{admission_fee}")
+
+    if hostel_info:
+        doc_lines.append("Hostel & Fee Details: " + " | ".join(hostel_info))
+
+    # Transport & Location
+    loc_info = []
+    if transport and transport != "N/A":
+        trans_str = f"Transport: {transport}"
+        if min_transport and max_transport:
+            trans_str += f" (Charges: ₹{min_transport} to ₹{max_transport})"
+        loc_info.append(trans_str)
+    if dist_hq:
+        loc_info.append(f"Distance from District HQ: {dist_hq} km")
+    if railway_stn:
+        loc_info.append(f"Nearest Railway Station: {railway_stn} ({railway_dist} km)")
+
+    if loc_info:
+        doc_lines.append("Location & Transport: " + " | ".join(loc_info))
+
+    content_text = "\n".join(doc_lines)
+
+    # Clean Supabase metadata
     metadata = {
         "doc_type": "college_info",
-        "tnea_code": str(row['tnea_code']),
-        "college_name": str(row['college_name']).strip(),
-        "district": district,
-        "autonomous_status": str(row['autonomous_status']).strip(),
-        "minority_status": str(row['minority_status']).strip(),
-        "placement_rate": float(row['placement']) if row['placement'] else 0.0,
-        "source": "colleges_db_df.csv",
-    }
-    
-    college_documents.append({
-        "content": text.strip(),
-        "metadata": metadata,
-    })
-
-print(f"   → Created {len(college_documents)} college_info documents")
-
-# ═══════════════════════════════════════════════════════════
-# 5. CREATE BRANCH_INFO DOCUMENTS
-# ═══════════════════════════════════════════════════════════
-print("📝 Creating branch_info documents...")
-
-# Build college lookup for district and name
-college_lookup = {}
-for _, row in colleges_df.iterrows():
-    college_lookup[str(row['tnea_code'])] = {
-        "college_name": str(row['college_name']).strip(),
-        "district": normalize_district(row['district']),
-    }
-
-branch_documents = []
-
-for _, row in branches_df.iterrows():
-    tnea_code = str(row['tnea_code'])
-    branch_code = str(row['branch_code']).strip().upper()
-    branch_full_name = get_branch_full_name(branch_code)
-    
-    college_info = college_lookup.get(tnea_code, {})
-    college_name = college_info.get("college_name", f"College {tnea_code}")
-    district = college_info.get("district", "Unknown")
-    
-    approved_intake = int(row['approved_intake']) if row['approved_intake'] else 0
-    year_of_starting = int(row['year_of_starting']) if row['year_of_starting'] else 0
-    nba_accredited = str(row['nba_accredited']).strip().lower() in ['yes', 'true', '1']
-    accreditation_valid_upto = str(row['accreditation_valid_upto']).strip() if row['accreditation_valid_upto'] else ""
-    approval_note = str(row['approval_note']).strip() if row['approval_note'] else ""
-    
-    # Build rich text content
-    text = f"College Name: {college_name}\n"
-    text += f"TNEA Code: {tnea_code}\n"
-    text += f"District: {district}\n"
-    text += f"Branch: {branch_full_name} (Code: {branch_code})\n"
-    text += f"Approved Intake: {approved_intake} seats\n"
-    
-    if year_of_starting:
-        text += f"Year of Starting: {year_of_starting}\n"
-    
-    text += f"NBA Accredited: {'Yes' if nba_accredited else 'No'}"
-    if nba_accredited and accreditation_valid_upto:
-        text += f" (Valid till {accreditation_valid_upto})"
-    text += "\n"
-    
-    if approval_note:
-        text += f"Approval Note: {approval_note}\n"
-    
-    # Build metadata
-    metadata = {
-        "doc_type": "branch_info",
-        "tnea_code": tnea_code,
+        "tnea_code": str(tnea_code),
         "college_name": college_name,
         "district": district,
-        "branch_code": branch_code,
-        "branch_full_name": branch_full_name,
-        "approved_intake": approved_intake,
-        "year_of_starting": year_of_starting,
-        "nba_accredited": nba_accredited,
-        "accreditation_valid_upto": accreditation_valid_upto,
-        "source": "branches_db_df.csv",
+        "branch_codes": branch_codes,
+        "branch_intakes": {b["branch_code"]: b["approved_intake"] for b in college_branches},
+        "autonomous": autonomous_bool,
+        "placement_rate": placement_val,
+        "pass_percentage": pass_pct,
+        "total_intake": total_approved_intake,
+        "hostel_facilities_boys": boys_hostel if boys_hostel not in ("N/A", "nan", "") else None,
+        "hostel_facilities_girls": girls_hostel if girls_hostel not in ("N/A", "nan", "") else None,
+        "mess_bill_boys": float(mess_boys) if mess_boys and mess_boys not in ("nan", "N/A", "") else None,
+        "mess_bill_girls": float(mess_girls) if mess_girls and mess_girls not in ("nan", "N/A", "") else None,
+        "room_rent_boys": float(room_boys) if room_boys and room_boys not in ("nan", "N/A", "") else None,
+        "room_rent_girls": float(room_girls) if room_girls and room_girls not in ("nan", "N/A", "") else None,
+        "source": "colleges_db_df.csv"
     }
-    
-    branch_documents.append({
-        "content": text.strip(),
-        "metadata": metadata,
+
+    college_documents.append({
+        "content": content_text,
+        "metadata": metadata
     })
 
-print(f"   → Created {len(branch_documents)} branch_info documents")
+print(f"   ✓ Successfully generated {len(college_documents)} denormalized college documents.")
 
 # ═══════════════════════════════════════════════════════════
-# 6. SAVE PROCESSED DOCUMENTS
+# 5. PROCESS TNEA ADMISSION RULES JSON
 # ═══════════════════════════════════════════════════════════
-print("\n💾 Saving processed documents...")
+print("\n📜 Processing TNEA admission rules JSON...")
 
-# Save college documents
-college_records = []
-for doc in college_documents:
-    college_records.append({
-        "content": doc["content"],
-        "metadata": json.dumps(doc["metadata"]),
-    })
+def flatten_json(obj: Any, indent: int = 0) -> list[str]:
+    """Recursively flatten dictionary or list into clean human-readable text lines."""
+    lines = []
+    prefix = "  " * indent
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            clean_key = str(k).replace("_", " ").title()
+            if isinstance(v, (dict, list)):
+                lines.append(f"{prefix}{clean_key}:")
+                lines.extend(flatten_json(v, indent + 1))
+            else:
+                lines.append(f"{prefix}{clean_key}: {v}")
+    elif isinstance(obj, list):
+        for item in obj:
+            if isinstance(item, (dict, list)):
+                lines.extend(flatten_json(item, indent + 1))
+            else:
+                lines.append(f"{prefix}- {item}")
+    else:
+        lines.append(f"{prefix}{obj}")
+    return lines
 
-college_output = pd.DataFrame(college_records)
-college_file = os.path.join(PROCESSED_DIR, "college_documents.csv")
-college_output.to_csv(college_file, index=False)
-print(f"   → Saved {len(college_output)} college documents to {college_file}")
+admission_documents = []
 
-# Save branch documents
-branch_records = []
-for doc in branch_documents:
-    branch_records.append({
-        "content": doc["content"],
-        "metadata": json.dumps(doc["metadata"]),
-    })
+if os.path.exists(adm_path):
+    with open(adm_path, "r", encoding="utf-8") as f:
+        raw_adm = json.load(f)
 
-branch_output = pd.DataFrame(branch_records)
-branch_file = os.path.join(PROCESSED_DIR, "branch_documents.csv")
-branch_output.to_csv(branch_file, index=False)
-print(f"   → Saved {len(branch_output)} branch documents to {branch_file}")
+    for entry in raw_adm:
+        section = entry.get("section", "General")
+        source_doc = entry.get("source_document", "TNEA Information Brochure 2026")
+        source_page = entry.get("source_page", 1)
+        content_obj = entry.get("content", {})
+
+        content_lines = [
+            f"Topic / Section: {section}",
+            f"Source: {source_doc} (Page {source_page})"
+        ]
+        content_lines.extend(flatten_json(content_obj, indent=0))
+        text = "\n".join(content_lines)
+
+        meta = {
+            "doc_type": "admission_info",
+            "section": section,
+            "source_document": source_doc,
+            "source_page": source_page,
+            "source": "tnea_admission_info.json"
+        }
+
+        admission_documents.append({
+            "content": text,
+            "metadata": meta
+        })
+    print(f"   ✓ Successfully generated {len(admission_documents)} admission rules documents.")
+else:
+    print(f"   ⚠️ Admission rules file not found at: {adm_path}")
 
 # ═══════════════════════════════════════════════════════════
-# 7. SUMMARY
+# 6. EXPORT PROCESSED DATA
 # ═══════════════════════════════════════════════════════════
-print("\n" + "=" * 60)
-print("📊 PREPROCESSING SUMMARY")
-print("=" * 60)
-print(f"   College documents: {len(college_documents)}")
-print(f"   Branch documents:  {len(branch_documents)}")
-print(f"   Total documents:   {len(college_documents) + len(branch_documents)}")
-print(f"   Districts found:   {len(set(normalize_district(d) for d in colleges_df['district'] if d))}")
-print(f"   Branch codes found: {len(set(str(b).strip().upper() for b in branches_df['branch_code'] if b))}")
-print("=" * 60)
-print("✅ Preprocessing complete!")
-print("\n📌 Next step: Run ingestion script to upload to Supabase:")
-print("   python scripts/08_master_ingest.py")
+print("\n💾 Saving processed files to data/processed/ ...")
+
+# 1. College documents CSV
+college_records = [
+    {"content": d["content"], "metadata": json.dumps(d["metadata"])}
+    for d in college_documents
+]
+college_df = pd.DataFrame(college_records)
+college_csv_path = os.path.join(PROCESSED_DIR, "college_documents.csv")
+college_df.to_csv(college_csv_path, index=False)
+print(f"   ✓ Saved {len(college_df)} rows to {college_csv_path}")
+
+# 2. College documents JSON
+college_json_path = os.path.join(PROCESSED_DIR, "college_documents.json")
+with open(college_json_path, "w", encoding="utf-8") as f:
+    json.dump(college_documents, f, indent=2, ensure_ascii=False)
+print(f"   ✓ Saved {len(college_documents)} items to {college_json_path}")
+
+# 3. Admission documents CSV & JSON
+if admission_documents:
+    adm_records = [
+        {"content": d["content"], "metadata": json.dumps(d["metadata"])}
+        for d in admission_documents
+    ]
+    adm_df = pd.DataFrame(adm_records)
+    adm_csv_path = os.path.join(PROCESSED_DIR, "admission_documents.csv")
+    adm_df.to_csv(adm_csv_path, index=False)
+    print(f"   ✓ Saved {len(adm_df)} rows to {adm_csv_path}")
+
+    adm_json_path = os.path.join(PROCESSED_DIR, "admission_documents.json")
+    with open(adm_json_path, "w", encoding="utf-8") as f:
+        json.dump(admission_documents, f, indent=2, ensure_ascii=False)
+    print(f"   ✓ Saved {len(admission_documents)} items to {adm_json_path}")
+
+print("\n" + "=" * 65)
+print("🎯 PREPROCESSING SUMMARY")
+print("=" * 65)
+print(f"• Total Rich College Documents:   {len(college_documents)}")
+print(f"• Total Admission Rule Documents: {len(admission_documents)}")
+print("• Sample Document Preview:")
+print("-" * 65)
+if college_documents:
+    print(college_documents[0]["content"][:320] + "\n...")
+    print("Sample Metadata:", json.dumps(college_documents[0]["metadata"], indent=2))
+print("=" * 65)
+print("✅ Done! Data is ready for Supabase ingestion via scripts/08_master_ingest.py")

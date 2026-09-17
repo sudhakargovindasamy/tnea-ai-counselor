@@ -1,27 +1,31 @@
+import concurrent.futures
 import logging
 import os
-from typing import Optional, List, Dict, Any
+from collections.abc import Generator
+from typing import Any
+
 from app.services.memory import memory
 
 logger = logging.getLogger(__name__)
 
-# 🚀 Production Fallback Chain 
-# Note: Ensure these model names match the exact strings supported by your google-genai SDK version.
+
+# 🚀 Production Fallback Chain (Updated for current API availability)
 FALLBACK_MODELS = [
-    "gemini-2.0-flash",         # Primary: Latest stable fast model
-    "gemini-1.5-flash-latest",  # Secondary: Highly reliable fallback
-    "gemini-1.5-pro-latest",    # Tertiary: Higher reasoning if flash fails
-    "gemini-1.0-pro"            # Last resort legacy
+    "gemini-3.8-flash",   # Latest and fastest (Released Sept 2026)
+    "gemini-3.5-flash",   # Highly stable fallback
+    "gemini-2.5-flash"    # Legacy fallback (Still works until Oct 2026)
 ]
 
 SYSTEM_PROMPT = """You are an expert AI counselor for Tamil Nadu Engineering Colleges (TNEA).
-You must answer the student's question using ONLY the provided <knowledge_base> XML context.
+Answer ONLY using the provided <knowledge_base> context. If the context does not contain the answer, explicitly state: 'The provided TNEA database does not contain information to answer this.' Do not make up college names, cutoffs, or branch codes.
 
-🚨 STRICT RULES:
+🚨 STRICT GROUNDING RULES:
 1. NEVER use your internal internet training data, guess, or estimate facts. 
-2. If the exact answer is NOT in the context, you MUST reply exactly with: "I don't have the exact information for this in my database."
-3. When calculating fees or intake, use the EXACT numbers from the context. DO NOT invent ranges.
-4. Do not make up amenities (like gym, ambulance, or specific clubs) unless they are explicitly written in the context.
+2. If the exact answer is NOT in the context, you MUST reply with: "The provided TNEA database does not contain information to answer this."
+3. When calculating fees or intake, use the EXACT numbers from the context. DO NOT invent numbers or ranges.
+4. Do not make up amenities (like gym, ambulance, or specific clubs) unless explicitly written in the context.
+5. Cutoff data does not exist in the database. If a student asks about cutoff marks or closing ranks, state: "I don't have cutoff/closing rank data in my database. I can help with college facilities, branches, and admission rules. For cutoff predictions, check tneaonline.org."
+6. If the student asks about a specific branch at a specific college, and that branch code is NOT listed in the retrieved context for that college, you MUST answer 'No' and list the branches that ARE available. NEVER confirm a branch exists unless it appears in the context.
 
 🧠 BRANCH CODE TRANSLATOR (Crucial for matching user queries to database codes):
 - CS = Computer Science and Engineering (CSE)
@@ -30,19 +34,22 @@ You must answer the student's question using ONLY the provided <knowledge_base> 
 - EE = Electrical and Electronics Engineering (EEE)
 - CE = Civil Engineering
 - IT = Information Technology
-- AD = Artificial Intelligence and Data Science (AI & DS)
-- AI = Artificial Intelligence and Machine Learning (AI & ML)
+- AD = Artificial Intelligence and Data Science (AI & DS / AI and DS)
+- AI / AL = Artificial Intelligence and Machine Learning (AI & ML)
 - CB = Computer Science and Business Systems (CSBS)
 - CY = Cyber Security
 - AU = Automobile Engineering
 - CH = Chemical Engineering
+- BM = Biomedical Engineering
+- BT = Biotechnology
+- AG = Agricultural Engineering
 
-INSTRUCTION: If the context shows a college has branch code "AD", and the student asks if it offers "Artificial Intelligence and Data Science", you MUST answer YES. Treat the codes and full names as identical.
+INSTRUCTION: If the context shows a college has branch code "AD" or lists Artificial Intelligence and Data Science, and the student asks if it offers "AI & DS" or "Artificial Intelligence", you MUST answer YES and specify the approved intake. Treat branch codes and full names as identical.
 """
 
-def format_history_for_gemini(history: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+def format_history_for_gemini(history: list[dict[str, str]]) -> list[dict[str, Any]]:
     """
-    Converts standard OpenAI-style memory history [{"role": "user", "content": "..."}]
+    Converts standard memory history [{"role": "user", "content": "..."}]
     to Google GenAI SDK format [{"role": "user", "parts": [{"text": "..."}]}].
     """
     if not history:
@@ -53,7 +60,6 @@ def format_history_for_gemini(history: List[Dict[str, str]]) -> List[Dict[str, A
         role = msg.get("role")
         content = msg.get("content")
         
-        # Google SDK uses 'model' instead of 'assistant'
         if role == "assistant":
             role = "model"
             
@@ -64,39 +70,91 @@ def format_history_for_gemini(history: List[Dict[str, str]]) -> List[Dict[str, A
             })
     return formatted
 
+def append_citations(answer: str, docs: list[dict[str, Any]] | None) -> str:
+    """
+    Appends clean, structured source citations at the end of the LLM response
+    so the frontend and user can verify information against official TNEA data.
+    """
+    if not docs:
+        return answer
+        
+    # Don't append citations to unanswerable refusal messages
+    if "The provided TNEA database does not contain information to answer this." in answer:
+        return answer
+
+    citations = []
+    seen = set()
+    for d in docs:
+        meta = d.get("metadata", {})
+        doc_type = meta.get("doc_type", "college_info")
+        
+        if doc_type == "admission_info":
+            sec = meta.get("section", "General Information")
+            src_doc = meta.get("source_document", "TNEA Information Brochure 2026")
+            cite_str = f"[Source: TNEA Rules - {sec} ({src_doc})]"
+        else:
+            college = meta.get("college_name", "Unknown College")
+            # Truncate long college address for concise citation
+            short_college = college.split(",")[0].strip()
+            tnea = meta.get("tnea_code", "N/A")
+            district = meta.get("district", "Tamil Nadu")
+            cite_str = f"[Source: {short_college}, TNEA Code: {tnea}, District: {district}]"
+            
+        if cite_str not in seen:
+            seen.add(cite_str)
+            citations.append(cite_str)
+
+    if not citations:
+        return answer
+
+    citation_block = "\n\n**Sources & Citations:**\n" + "\n".join(f"- {c}" for c in citations)
+    return answer + citation_block
+
+def _call_gemini_with_timeout(chat, user_message: str, timeout_seconds: float = 30.0):
+    """
+    Execute Gemini send_message in a worker thread with a strict timeout.
+    Prevents API hangs from blocking the FastAPI event loop or client.
+    """
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(chat.send_message, user_message)
+        try:
+            return future.result(timeout=timeout_seconds)
+        except concurrent.futures.TimeoutError:
+            raise TimeoutError(f"Gemini API generation timed out after {timeout_seconds} seconds")
+
 def generate_answer(
     question: str, 
     xml_context: str, 
     session_id: str,
-    reference_answer: Optional[str] = None, 
-    intent: str = "search"
+    reference_answer: str | None = None, 
+    intent: str = "search",
+    docs: list[dict[str, Any]] | None = None
 ) -> str:
-
-    # 🛠️ FIX 1: Strict Lazy Imports (Prevents 512MB Render OOM crash on startup)
+    """
+    Synchronous answer generation with 30s timeout, fallback models,
+    and automatic grounding citations.
+    """
     from google import genai
-    from google.genai import types
-    from google.genai import errors
+    from google.genai import errors, types
     
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        raise ValueError("GEMINI_API_KEY is not set in environment variables.")
+        error_msg = "GEMINI_API_KEY is not set in environment variables."
+        logger.error(f"❌ {error_msg}")
+        return f"Configuration Error: {error_msg}"
         
     client = genai.Client(api_key=api_key)
 
-    # Fetch and format history
     raw_history = memory.get_history(session_id) or []
     history = format_history_for_gemini(raw_history)
 
-    # Build Context & System Instruction
     if reference_answer:
         context_block = (
-            f"REFERENCE ANSWER (from a previous similar question):\n{reference_answer}\n\n"
+            f"REFERENCE ANSWER:\n{reference_answer}\n\n"
             f"CURRENT KNOWLEDGE BASE:\n{xml_context}"
         )
         system_instruction = SYSTEM_PROMPT + (
-            "\n\nADDITIONAL: A similar question was asked before and a reference answer is provided. "
-            "Analyze it against the current knowledge base. Generate a FRESH, natural response. "
-            "Do not copy it verbatim; rephrase and improve it using the current XML context."
+            "\n\nADDITIONAL: Rephrase and improve the answer using the current XML context."
         )
     else:
         context_block = f"CONTEXT:\n{xml_context}"
@@ -104,7 +162,6 @@ def generate_answer(
 
     user_message = f"{context_block}\n\nSTUDENT QUESTION: {question}"
     
-    # Generation Config (Low temperature is CRITICAL for RAG to prevent hallucinations)
     gen_config = types.GenerateContentConfig(
         system_instruction=system_instruction,
         temperature=0.1, 
@@ -115,46 +172,123 @@ def generate_answer(
 
     for model in FALLBACK_MODELS:
         try:
-            logger.info(f"💬 Generation: Trying {model}")
+            logger.info(f"💬 Generation: Sending request to {model} (30s timeout)...")
             
             chat = client.chats.create(
                 model=model,
                 history=history,
                 config=gen_config
             )
-            response = chat.send_message(user_message)
             
-            # Handle potential empty responses (happens if Gemini blocks prompt due to safety filters)
+            response = _call_gemini_with_timeout(chat, user_message, timeout_seconds=30.0)
+            
             if not response.text:
-                logger.warning(f"⚠️ Empty response from {model}. Prompt might be blocked by safety filters.")
                 raise ValueError("Empty response generated by model.")
                 
-            answer = response.text
-            logger.info(f"✅ Success with {model}")
+            raw_answer = response.text.strip()
+            final_answer = append_citations(raw_answer, docs)
+            logger.info(f"✅ Generation successful with model '{model}'.")
 
-            # Save only the question and answer to memory (not the huge XML context)
             memory.add_message(session_id, "user", question)
-            memory.add_message(session_id, "assistant", answer) # Use 'assistant' for standard memory schemas
+            memory.add_message(session_id, "assistant", final_answer)
             
-            return answer
+            return final_answer
+
+        except TimeoutError as te:
+            logger.error(f"⏱️ TimeoutError on model '{model}': {te}", exc_info=True)
+            last_error = te
+            continue
             
-        except errors.ClientError as e:
-            # Handle 429 (rate limit), 404 (model not found), 400 (bad request)
-            error_code = getattr(e, 'code', getattr(e, 'status_code', 500))
+        except errors.ClientError as ce:
+            error_code = getattr(ce, "code", getattr(ce, "status_code", 500))
+            logger.error(f"❌ ClientError on model '{model}' (HTTP {error_code}): {ce}", exc_info=True)
+            last_error = ce
             if error_code in [429, 404, 400]:
-                logger.warning(f"⚠️ {error_code} Error on {model}: {e}. Auto-switching to fallback...")
-                last_error = e
                 continue
             else:
-                logger.error(f"❌ Client Error on {model}: {e}")
-                last_error = e
-                break # Break on non-retryable client errors like 403 Forbidden
+                break
                 
         except Exception as e:
-            logger.error(f"❌ Unexpected Error on {model}: {e}")
             last_error = e
+            err_name = type(e).__name__
+            if "Connect" in err_name or "Resolution" in err_name or "Network" in err_name:
+                logger.warning(f"🌐 Generation network unreachable on model '{model}': {e}")
+                break
+            logger.error(f"❌ Generation Exception on model '{model}': {err_name}: {e}", exc_info=True)
             continue
 
-    # If all models fail, return a graceful message instead of crashing the FastAPI server
-    logger.error(f"🚨 All fallback models exhausted for Generation. Last error: {last_error}")
-    return "I am currently experiencing technical difficulties connecting to the AI counselor. Please try again in a few moments."
+    error_summary = f"{type(last_error).__name__}: {last_error!s}" if last_error else "Unknown generation error"
+    logger.error(f"🚨 All fallback models exhausted for LLM Generation: {error_summary}")
+    return f"Error: LLM Generation failed ({error_summary})"
+
+def generate_answer_stream(
+    question: str, 
+    xml_context: str, 
+    session_id: str,
+    docs: list[dict[str, Any]] | None = None
+) -> Generator[str, None, None]:
+    """
+    Streaming token generator for Server-Sent Events (SSE).
+    Streams chunks token-by-token and concludes with citations.
+    """
+    from google import genai
+    from google.genai import types
+    
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        yield "Error: GEMINI_API_KEY is not set."
+        return
+        
+    client = genai.Client(api_key=api_key)
+
+    raw_history = memory.get_history(session_id) or []
+    history = format_history_for_gemini(raw_history)
+
+    context_block = f"CONTEXT:\n{xml_context}"
+    user_message = f"{context_block}\n\nSTUDENT QUESTION: {question}"
+
+    gen_config = types.GenerateContentConfig(
+        system_instruction=SYSTEM_PROMPT,
+        temperature=0.1, 
+        max_output_tokens=1024,
+    )
+
+    full_response_text = []
+
+    for model in FALLBACK_MODELS:
+        try:
+            logger.info(f"🌊 SSE Streaming with model '{model}'...")
+            chat = client.chats.create(
+                model=model,
+                history=history,
+                config=gen_config
+            )
+            
+            stream = chat.send_message_stream(user_message)
+            for chunk in stream:
+                if chunk.text:
+                    full_response_text.append(chunk.text)
+                    yield chunk.text
+
+            # Stream finished successfully
+            complete_answer = "".join(full_response_text).strip()
+            
+            # Append citations at end of stream if applicable
+            if docs and "The provided TNEA database does not contain information to answer this." not in complete_answer:
+                citations_text = append_citations("", docs)
+                yield citations_text
+                complete_answer += citations_text
+
+            memory.add_message(session_id, "user", question)
+            memory.add_message(session_id, "assistant", complete_answer)
+            return
+
+        except Exception as e:
+            err_name = type(e).__name__
+            if "Connect" in err_name or "Resolution" in err_name or "Network" in err_name:
+                logger.warning(f"🌐 Streaming network unreachable on model '{model}': {e}")
+                break
+            logger.warning(f"⚠️ Streaming failed on model '{model}': {e}. Trying fallback...")
+            continue
+
+    yield "\n[Error: LLM streaming generation failed across all models.]"
