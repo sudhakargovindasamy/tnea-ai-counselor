@@ -36,6 +36,20 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ═══════════════════════════════════════════════════════════
+# 🛡️ ROBUST CORS CONFIGURATION (Fixes SSE /chat Preflight Issues)
+# ═══════════════════════════════════════════════════════════
+# Browsers strictly reject allow_origins=["*"] when custom headers (like Accept: text/event-stream) 
+# or credentials are involved. Explicit origins are required for reliable preflight (OPTIONS) handling.
+ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    # 🔴 TODO: Add your production frontend URL here before deploying to Render!
+    # e.g., "https://tnea-counselor-frontend.vercel.app"
+]
+
+# ═══════════════════════════════════════════════════════════
 # 🛡️ RATE LIMITER (10 requests per minute per IP)
 # ═══════════════════════════════════════════════════════════
 limiter = Limiter(key_func=get_remote_address, default_limits=["10/minute"])
@@ -84,15 +98,14 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# 🛠️ CORS FIX: Browsers strictly block allow_origins=["*"] if allow_credentials=True.
-# Since we pass session_id in the JSON body and don't use HTTP-only cookies, 
-# credentials must be False for the frontend fetch request to succeed.
+# 🛠️ CORS FIX: Explicit origins + allow_credentials=True is the most bulletproof 
+# configuration for modern browsers handling POST requests with SSE (text/event-stream).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  
-    allow_credentials=False,  # <--- 🚨 CHANGED FROM True TO False
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=ALLOWED_ORIGINS,       # ✅ Explicit origins (Required)
+    allow_credentials=True,              # ✅ Required if frontend sends cookies, auth headers, or uses strict SSE clients
+    allow_methods=["GET", "POST", "OPTIONS", "PUT", "DELETE"], # ✅ Explicitly allow OPTIONS for preflight
+    allow_headers=["*"],                 # ✅ Allows all headers (Content-Type, Accept, Authorization, etc.)
 )
 
 @app.middleware("http")
