@@ -36,18 +36,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ═══════════════════════════════════════════════════════════
-# 🛡️ ROBUST CORS CONFIGURATION (Fixes SSE /chat Preflight Issues)
+# 🛡️ DYNAMIC CORS CONFIGURATION (Reads from .env)
 # ═══════════════════════════════════════════════════════════
-# Browsers strictly reject allow_origins=["*"] when custom headers (like Accept: text/event-stream) 
-# or credentials are involved. Explicit origins are required for reliable preflight (OPTIONS) handling.
-ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    # 🔴 TODO: Add your production frontend URL here before deploying to Render!
-    # e.g., "https://tnea-counselor-frontend.vercel.app"
-]
+# Read comma-separated origins from environment variables.
+# This allows adding production frontend URLs without changing the code.
+raw_origins = os.getenv(
+    "CORS_ALLOWED_ORIGINS", 
+    "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000"
+)
+ALLOWED_ORIGINS = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
 
 # ═══════════════════════════════════════════════════════════
 # 🛡️ RATE LIMITER (10 requests per minute per IP)
@@ -102,7 +99,7 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 # configuration for modern browsers handling POST requests with SSE (text/event-stream).
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,       # ✅ Explicit origins (Required)
+    allow_origins=ALLOWED_ORIGINS,       # ✅ Dynamic explicit origins from .env
     allow_credentials=True,              # ✅ Required if frontend sends cookies, auth headers, or uses strict SSE clients
     allow_methods=["GET", "POST", "OPTIONS", "PUT", "DELETE"], # ✅ Explicitly allow OPTIONS for preflight
     allow_headers=["*"],                 # ✅ Allows all headers (Content-Type, Accept, Authorization, etc.)
