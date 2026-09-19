@@ -74,10 +74,9 @@ def _get_embedding_model():
     """Lazily load the embedding model, reusing retrieval.py's instance to save RAM."""
     global embedding_model
     if embedding_model is None:
-        from app.services.retrieval import _load_models
-        from app.services.retrieval import embedding_model as retrieval_model
-        _load_models()
-        embedding_model = retrieval_model
+        from app.services import retrieval
+        retrieval._load_models()
+        embedding_model = retrieval.embedding_model
         logger.info("✅ Cache embedding model ready (shared with retrieval).")
     return embedding_model
 

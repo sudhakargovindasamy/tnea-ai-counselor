@@ -47,10 +47,10 @@ Answer ONLY using the provided <knowledge_base> context. If the context does not
 INSTRUCTION: If the context shows a college has branch code "AD" or lists Artificial Intelligence and Data Science, and the student asks if it offers "AI & DS" or "Artificial Intelligence", you MUST answer YES and specify the approved intake. Treat branch codes and full names as identical.
 """
 
-def format_history_for_gemini(history: list[dict[str, str]]) -> list[dict[str, Any]]:
+def format_history_for_gemini(history: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """
-    Converts standard memory history [{"role": "user", "content": "..."}]
-    to Google GenAI SDK format [{"role": "user", "parts": [{"text": "..."}]}].
+    Converts standard memory history to Google GenAI SDK format.
+    Handles both {"content": "..."} and {"parts": [{"text": "..."}]}.
     """
     if not history:
         return []
@@ -59,14 +59,16 @@ def format_history_for_gemini(history: list[dict[str, str]]) -> list[dict[str, A
     for msg in history:
         role = msg.get("role")
         content = msg.get("content")
-        
+        if not content and "parts" in msg and msg["parts"]:
+            content = msg["parts"][0].get("text", "")
+            
         if role == "assistant":
             role = "model"
             
         if role in ["user", "model"] and content:
             formatted.append({
                 "role": role,
-                "parts": [{"text": content}]
+                "parts": [{"text": str(content)}]
             })
     return formatted
 
@@ -188,10 +190,6 @@ def generate_answer(
             raw_answer = response.text.strip()
             final_answer = append_citations(raw_answer, docs)
             logger.info(f"✅ Generation successful with model '{model}'.")
-
-            memory.add_message(session_id, "user", question)
-            memory.add_message(session_id, "assistant", final_answer)
-            
             return final_answer
 
         except TimeoutError as te:

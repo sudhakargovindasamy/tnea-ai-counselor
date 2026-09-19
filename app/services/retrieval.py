@@ -416,45 +416,8 @@ def reorder_for_llm(docs: List[Dict]) -> List[Dict]:
 
 # ─────────────── QUERY REWRITER ───────────────
 def rewrite_query_with_history(current_question: str, chat_history: list) -> str:
-    global GEMINI_AVAILABLE
-    if not chat_history:
-        return current_question
-        
-    if not GEMINI_AVAILABLE:
-        try:
-            import google.generativeai as genai
-            genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-            GEMINI_AVAILABLE = True
-        except Exception:
-            return current_question
-
-    pronouns = ["there", "it", "that college", "this college", "they", "its", "those"]
-    if not any(p in current_question.lower() for p in pronouns):
-        return current_question
-
-    hist_text = "\n".join([f"{msg.get('role', 'user')}: {msg.get('content', '')}" for msg in chat_history[-4:]])
-    
-    prompt = f"""You are a search query rewriter for a college counseling AI.
-Look at Chat History and Current Question.
-Rewrite pronoun references ("there", "it", "that college") into the specific college name.
-Output ONLY the rewritten question.
-
-Chat History:
-{hist_text}
-
-Current Question: {current_question}
-Rewritten Question:"""
-
-    try:
-        import google.generativeai as genai
-        model = genai.GenerativeModel("gemini-1.5-flash")
-        response = model.generate_content(prompt)
-        rewritten = response.text.strip().strip('"')
-        logger.info(f"🧠 Query Rewritten: '{current_question}' -> '{rewritten}'")
-        return rewritten
-    except Exception as e:
-        logger.warning(f"⚠️ Query rewriting failed: {e}")
-        return current_question
+    """Pass-through: Query rewriting is handled by query_understanding.rewrite_query in main.py."""
+    return current_question
 
 # ─────────────── SMART ENTITY LOOKUP ───────────────
 def entity_lookup(college_name: str, limit: int = 10) -> List[Dict]:
@@ -557,9 +520,7 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
     _load_models()
     filters = _normalize_filters(filters)
 
-    # Resolve coreferences from chat history (e.g. "what is the fee there?")
-    query = rewrite_query_with_history(query, chat_history)
-
+    # Query rewriting is already performed upstream in app/main.py before retrieval
     active_filters = dict(filters) if filters else {}
     query_lower = query.lower()
 
@@ -693,9 +654,9 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
     if not candidates:
         return None, "The provided TNEA database does not contain information to answer this."
 
-    # 8. CROSS-ENCODER RERANKING (Memory Optimized)
+    # 8. CROSS-ENCODER RERANKING (Low-memory CPU optimization for Render)
     if reranker:
-        MAX_RERANK_CANDIDATES = 15
+        MAX_RERANK_CANDIDATES = min(len(candidates), max(top_k + 2, 6))
         rerank_pool = candidates[:MAX_RERANK_CANDIDATES]
         
         pairs = [[query, c.get("content", "")] for c in rerank_pool]

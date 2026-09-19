@@ -1,4 +1,5 @@
 import asyncio
+import gc
 import json
 import logging
 import math
@@ -39,12 +40,14 @@ logger = logging.getLogger(__name__)
 # 🛡️ DYNAMIC CORS CONFIGURATION (Reads from .env)
 # ═══════════════════════════════════════════════════════════
 # Read comma-separated origins from environment variables.
-# This allows adding production frontend URLs without changing the code.
+# Safely supports origins with and without trailing slashes.
 raw_origins = os.getenv(
     "CORS_ALLOWED_ORIGINS", 
     "http://localhost:5173,http://127.0.0.1:5173,http://localhost:3000,http://127.0.0.1:3000"
 )
-ALLOWED_ORIGINS = [origin.strip() for origin in raw_origins.split(",") if origin.strip()]
+parsed_origins = [origin.strip().rstrip("/") for origin in raw_origins.split(",") if origin.strip()]
+# Match both with and without trailing slash to prevent preflight rejections
+ALLOWED_ORIGINS = list(set(parsed_origins + [f"{o}/" for o in parsed_origins]))
 
 # ═══════════════════════════════════════════════════════════
 # 🛡️ RATE LIMITER (10 requests per minute per IP)
@@ -446,11 +449,13 @@ def query(request: Request, req: QueryRequest):
 
         # 2) Chat History & Query Translation
         history = memory.get_history(req.session_id)
-        try:
-            search_query = _llm_retry(rewrite_query, req.question, history) if history else req.question
-        except Exception as e:
-            logger.warning(f"Query rewrite warning: {e}")
-            search_query = req.question
+        search_query = req.question
+        if history:
+            try:
+                search_query = rewrite_query(req.question, history)
+            except Exception as e:
+                logger.warning(f"Query rewrite warning: {e}")
+                search_query = req.question
 
         # 3) Intent & Filters
         try:
@@ -518,3 +523,5 @@ def query(request: Request, req: QueryRequest):
         tracer.finish()
         logger.error(f"Error in /query endpoint: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        gc.collect()
