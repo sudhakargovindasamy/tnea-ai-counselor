@@ -3,9 +3,6 @@
 # Optimized for 512MB RAM deployment on Render
 # ─────────────────────────────────────────────────────────────
 
-# 🚨 CRITICAL: Force CPU-only PyTorch wheels to prevent 2GB+ CUDA bloat
---extra-index-url https://download.pytorch.org/whl/cpu
-
 # ━━━ Core Framework ━━━
 fastapi>=0.115.0
 uvicorn[standard]>=0.30.0
@@ -22,11 +19,6 @@ supabase>=2.7.0
 # ━━━ LLM SDKs (Google Gemini) ━━━
 google-genai>=1.0.0
 google-generativeai>=0.8.3
-
-# ━━━ AI/ML Models ━━━
-# Note: --extra-index-url above forces CPU wheels for torch
-torch>=2.2.1
-sentence-transformers>=3.0.0
 
 # ━━━ Utilities & Data Processing ━━━
 numpy>=1.26.4

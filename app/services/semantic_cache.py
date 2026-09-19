@@ -65,26 +65,13 @@ class InMemoryLRUCache:
 _L1_CACHE = InMemoryLRUCache(capacity=2000, ttl_seconds=3600 * 48)
 
 # ═══════════════════════════════════════════════════════════
-# 🧠 L2: SUPABASE SEMANTIC CACHE (Vector Similarity)
+# 🧠 L2: SUPABASE CACHE (Fast DB Lookup)
 # ═══════════════════════════════════════════════════════════
-embedding_model = None
-CACHE_THRESHOLD = 0.92
-
-def _get_embedding_model():
-    """Lazily load the embedding model, reusing retrieval.py's instance to save RAM."""
-    global embedding_model
-    if embedding_model is None:
-        from app.services import retrieval
-        retrieval._load_models()
-        embedding_model = retrieval.embedding_model
-        logger.info("✅ Cache embedding model ready (shared with retrieval).")
-    return embedding_model
-
 def check_cache(question: str) -> dict[str, Any] | None:
     """
     Two-tier caching:
     1. L1: In-memory exact normalized LRU cache (< 1ms)
-    2. L2: Supabase vector semantic cache (~200ms)
+    2. L2: Supabase database cache (~50ms)
     """
     if not question or not str(question).strip():
         return None
@@ -95,19 +82,13 @@ def check_cache(question: str) -> dict[str, Any] | None:
         logger.info(f"⚡ [L1_CACHE_HIT] Instant answer (<1ms) for: '{question[:50]}'")
         return l1_hit
 
-    # 2. Check L2 Supabase Semantic Cache
+    # 2. Check L2 Supabase Cache
     try:
-        model = _get_embedding_model()
-        emb = model.encode(question, normalize_embeddings=True).tolist()
-        resp = supabase.rpc("match_cache", {
-            "query_embedding": emb,
-            "match_threshold": CACHE_THRESHOLD,
-            "match_count": 1
-        }).execute()
-        
+        norm_q = question.strip()
+        resp = supabase.table("query_cache").select("answer, sources").ilike("question", norm_q).limit(1).execute()
         if resp.data and len(resp.data) > 0:
             hit = resp.data[0]
-            logger.info(f"✅ [L2_SEMANTIC_CACHE_HIT] Similarity: {hit.get('similarity', 0):.4f}")
+            logger.info(f"✅ [L2_CACHE_HIT] Found in DB for: '{question[:50]}'")
             cached_result = {
                 "answer": hit.get("answer", ""),
                 "sources": hit.get("sources", [])
@@ -181,13 +162,10 @@ def save_to_cache(question: str, answer: str, sources: list, overwrite: bool = F
             except Exception:
                 pass
 
-        model = _get_embedding_model()
-        emb = model.encode(question, normalize_embeddings=True).tolist()
         expires_at = (datetime.utcnow() + timedelta(days=7)).isoformat()
         
         supabase.table("query_cache").insert({
             "question": question,
-            "embedding": emb,
             "answer": answer,
             "sources": clean_sources,
             "has_sources": True,

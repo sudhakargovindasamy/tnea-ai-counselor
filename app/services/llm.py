@@ -11,9 +11,10 @@ logger = logging.getLogger(__name__)
 
 # 🚀 Production Fallback Chain (Updated for current API availability)
 FALLBACK_MODELS = [
-    "gemini-3.8-flash",   # Latest and fastest (Released Sept 2026)
-    "gemini-3.5-flash",   # Highly stable fallback
-    "gemini-3.6-flash"    # Stable mid-tier fallback
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-flash-lite-latest",
+    "gemini-3-flash-preview"
 ]
 
 SYSTEM_PROMPT = """You are an expert AI counselor for Tamil Nadu Engineering Colleges (TNEA).

@@ -4,60 +4,18 @@ import os
 import re
 import gc
 import json
-import torch
 from typing import List, Dict, Any, Optional, Tuple
 from app.services.database import supabase
-
-# ═══════════════════════════════════════════════════════════
-# 🚨 512MB RAM OPTIMIZATION: Force single-threaded inference
-# ═══════════════════════════════════════════════════════════
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
-os.environ["NUMEXPR_NUM_THREADS"] = "1"
-os.environ["HF_HUB_OFFLINE"] = "0"
-os.environ["TRANSFORMERS_OFFLINE"] = "0"
 
 logger = logging.getLogger(__name__)
 
 # ═══════════════ 🧠 STRICT LAZY LOADING & MEMORY GUARDS ═══════════════
 embedding_model = None
 reranker = None
-GEMINI_AVAILABLE = False
 
 def _load_models():
-    global embedding_model, reranker
-    
-    if embedding_model is None:
-        logger.info("🧠 Loading embedding model (MiniLM-L6-v2)...")
-        torch.set_num_threads(1)  # 🚨 Critical for memory
-        try:
-            from sentence_transformers import SentenceTransformer
-            embedding_model = SentenceTransformer(
-                "sentence-transformers/all-MiniLM-L6-v2",
-                device="cpu"
-            )
-            logger.info("✅ Embedding model loaded.")
-        except Exception as e:
-            logger.error(f"❌ Failed to load embedding model: {e}")
-            
-    if reranker is None:
-        logger.info("🧠 Loading Cross-Encoder reranker (ms-marco-MiniLM-L-6-v2)...")
-        try:
-            from sentence_transformers import CrossEncoder
-            reranker = CrossEncoder(
-                "cross-encoder/ms-marco-MiniLM-L-6-v2",
-                device="cpu"
-            )
-            logger.info("✅ Reranker loaded.")
-        except Exception as e:
-            logger.error(f"❌ Failed to load reranker: {e}")
-            
-    gc.collect()
-    if torch.cuda.is_available():
-        torch.cuda.empty_cache()
-    logger.info("🧹 Memory cleanup complete.")
+    """No-op: In-memory lightweight retrieval requires zero PyTorch models (512MB RAM safe)."""
+    pass
 
 QUERY_PREFIX = ""
 
@@ -577,6 +535,27 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
                 c["rerank_score"] = 10.0
             logger.info(f"✅ Found {len(exact)} documents for college entity '{detected_college}'")
             return exact[:top_k], format_context_xml(exact[:top_k])
+        elif not district:
+            # Explicit college queried but does not exist in TNEA database (e.g. Sudhakar College of Engineering)
+            return None, f"The college '{detected_college}' does not exist in the official TNEA database. Please verify the college name or check if it participates in TNEA counselling."
+
+    # Also check if the raw query was asking for a specific college
+    if not detected_college and any(w in query_lower for w in ["college", "institute", "campus"]):
+        clean_q = re.sub(r"[^\w\s]", " ", query_lower)
+        stop = {"engineering", "college", "colleges", "clg", "clgs", "technology", "institute", "of", "and", "in", "with", "the", "for", "at"}
+        college_keywords = [w for w in clean_q.split() if w not in stop and len(w) > 2]
+        if college_keywords and not district:
+            local_docs = _get_local_documents()
+            matched = []
+            for d in local_docs:
+                c_name = d.get("metadata", {}).get("college_name", "").lower()
+                if all(kw in c_name for kw in college_keywords if len(kw) > 3):
+                    matched.append(d)
+            if matched:
+                return matched[:top_k], format_context_xml(matched[:top_k])
+            else:
+                # College name queried does not exist in TNEA database!
+                return None, f"The college '{query.strip()}' does not exist in the official TNEA database. Please verify the college name or check if it participates in TNEA counselling."
 
     # 3. DIRECT CATALOG FILTERING
     is_hostel_query = "hostel" in query_lower or "mess" in query_lower or "room rent" in query_lower
@@ -620,92 +599,57 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
                     c["rerank_score"] = 10.0
                 return exact[:top_k], format_context_xml(exact[:top_k])
 
-    # 5. ROUTING: ADMISSION RULES VS COLLEGE INFO
-    table_name = "documents"
-    rpc_name = "match_documents"
+    # 5. ROUTING: ADMISSION RULES
     is_admission_query = bool(re.search(
         r"\b(reservation|counselling|eligibility|native|certificate|tnea rule|first graduate|community|oc|bc|mbc|sc|st|7\.5%|quota)\b",
         query_lower
     ))
     if is_admission_query:
-        table_name = "admission_documents"
-        rpc_name = "match_admission_documents"
+        adm_docs = _get_local_admission_documents()
+        words = [w for w in re.sub(r"[^\w\s]", " ", query_lower).split() if len(w) > 2]
+        scored_adm = []
+        for d in adm_docs:
+            content_low = d.get("content", "").lower()
+            score = sum(content_low.count(w) for w in words)
+            if score > 0:
+                scored_adm.append((score, d))
+        if scored_adm:
+            scored_adm.sort(key=lambda x: x[0], reverse=True)
+            top_adm = [doc for _, doc in scored_adm[:top_k]]
+            return top_adm, format_context_xml(top_adm)
 
-    # 6. HYBRID VECTOR SEARCH WITH SUPABASE RPC PRE-FILTER
-    supabase_filter = {}
-    if table_name == "documents":
-        supabase_filter["doc_type"] = "college_info"
-        if district:
-            supabase_filter["district"] = district
-        if branch_code:
-            supabase_filter["branch_codes"] = [branch_code]
+    # 6. BROAD IN-MEMORY TEXT RANKING (0 MB PyTorch overhead, runs in 1ms)
+    local_docs = _get_local_documents()
+    filtered_local = []
+    for d in local_docs:
+        meta = d.get("metadata", {})
+        if district and district.lower() != meta.get("district", "").lower():
+            continue
+        if branch_code and branch_code not in meta.get("branch_codes", []):
+            continue
         if autonomous_filter is not None:
-            supabase_filter["autonomous"] = autonomous_filter
+            c_auto = meta.get("autonomous")
+            if c_auto is not None and bool(c_auto) != bool(autonomous_filter):
+                continue
+        filtered_local.append(d)
 
-    candidates = []
-    if embedding_model:
-        q_emb = embedding_model.encode(QUERY_PREFIX + query, normalize_embeddings=True).tolist()
-        fetch_count = max(top_k * 3, 15)
-        
-        try:
-            resp = supabase.rpc(rpc_name, {
-                "query_embedding": q_emb,
-                "filter": supabase_filter,
-                "match_count": fetch_count
-            }).execute()
-            candidates = resp.data or []
-        except Exception as e:
-            logger.debug(f"Supabase RPC search skipped: {e}")
+    candidates = filtered_local if filtered_local else local_docs
 
-    # Fallback to local documents if Supabase returned 0 or errored
-    if not candidates:
-        if table_name == "admission_documents":
-            candidates = _get_local_admission_documents()
-        else:
-            local_docs = _get_local_documents()
-            filtered_local = []
-            for d in local_docs:
-                meta = d.get("metadata", {})
-                if district and district.lower() != meta.get("district", "").lower():
-                    continue
-                if branch_code and branch_code not in meta.get("branch_codes", []):
-                    continue
-                if autonomous_filter is not None:
-                    c_auto = meta.get("autonomous")
-                    if c_auto is not None and bool(c_auto) != bool(autonomous_filter):
-                        continue
-                filtered_local.append(d)
-            candidates = filtered_local if filtered_local else local_docs[:15]
+    # Rank by search query keyword overlap in content & title
+    search_words = [w for w in re.sub(r"[^\w\s]", " ", query_lower).split() if len(w) > 2]
+    if search_words:
+        scored_candidates = []
+        for c in candidates:
+            text = (c.get("content", "") + " " + c.get("metadata", {}).get("college_name", "")).lower()
+            score = sum(text.count(w) for w in search_words)
+            perf_bonus = (float(c.get("metadata", {}).get("pass_percentage") or 0.0) + float(c.get("metadata", {}).get("placement_rate") or 0.0)) / 100.0
+            scored_candidates.append((score + perf_bonus, c))
+        scored_candidates.sort(key=lambda x: x[0], reverse=True)
+        candidates = [doc for _, doc in scored_candidates]
 
-    # 7. STRICT DEDUPLICATION
-    candidates = deduplicate_docs(candidates)
-
-    if not candidates:
+    top_docs = deduplicate_docs(candidates)[:top_k]
+    if not top_docs:
         return None, "The provided TNEA database does not contain information to answer this."
 
-    # 8. CROSS-ENCODER RERANKING (Low-memory CPU optimization for Render)
-    if reranker:
-        MAX_RERANK_CANDIDATES = min(len(candidates), max(top_k + 2, 6))
-        rerank_pool = candidates[:MAX_RERANK_CANDIDATES]
-        
-        pairs = [[query, c.get("content", "")] for c in rerank_pool]
-        
-        with torch.inference_mode():
-            scores = reranker.predict(pairs)
-            
-        for i, sc in enumerate(scores):
-            rerank_pool[i]["rerank_score"] = float(sc)
-            
-        rerank_pool.sort(key=lambda x: x["rerank_score"], reverse=True)
-        
-        del pairs
-        del scores
-        gc.collect()
-        
-        top_docs = deduplicate_docs(rerank_pool)[:top_k]
-    else:
-        top_docs = candidates[:top_k]
-        
     top_docs = reorder_for_llm(top_docs)
-
     return top_docs, format_context_xml(top_docs)
