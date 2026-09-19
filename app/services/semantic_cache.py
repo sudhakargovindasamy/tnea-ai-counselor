@@ -135,7 +135,7 @@ def purge_question_cache(question: str):
         logger.debug(f"L1 question purge error: {e}")
 
     try:
-        supabase.table("query_cache").delete().ilike("question", question.strip()).execute()
+        supabase.table("query_cache").delete().ilike("question", f"%{question.strip()}%").execute()
         logger.info(f"🗑️ Purged cache for question: '{question[:50]}'")
     except Exception as e:
         logger.warning(f"L2 question purge error: {e}")

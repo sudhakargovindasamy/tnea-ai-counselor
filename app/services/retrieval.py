@@ -201,8 +201,8 @@ def _load_college_caches():
     if _COLLEGE_MAP_CACHE:
         return
 
-    stopwords = {"engineering", "college", "technology", "institute", "of", "and", 
-                 "autonomous", "the", "for", "engg", "eng", "tech", "enginering", "technolgoy"}
+    stopwords = {"engineering", "college", "colleges", "clg", "clgs", "technology", "institute", "of", "and", 
+                 "autonomous", "the", "for", "engg", "eng", "tech", "enginering", "technolgoy", "naac", "grade"}
 
     try:
         res = supabase.table("documents").select("metadata").eq("metadata->>doc_type", "college_info").execute()
@@ -261,9 +261,9 @@ def fuzzy_resolve_college(user_input: str) -> Optional[str]:
             logger.info(f"🧠 Alias match: '{alias}' -> '{full_name}'")
             return full_name
 
-    stopwords = {"engineering", "college", "colleges", "technology", "institute", "of", "and", 
+    stopwords = {"engineering", "college", "colleges", "clg", "clgs", "technology", "institute", "of", "and", 
                  "autonomous", "the", "for", "engg", "eng", "tech", "offer", "does", "is", 
-                 "available", "courses", "which", "what", "are", "in"}
+                 "available", "courses", "which", "what", "are", "in", "with", "naac", "grade"}
     
     clean_input = expanded_input
     for word in stopwords:
@@ -467,7 +467,7 @@ def entity_lookup(college_name: str, limit: int = 10) -> List[Dict]:
 
 # ─────────────── 🚀 DIRECT CATALOG FILTERING ───────────────
 def get_colleges_by_filters(district: str = None, branch_code: str = None, 
-                            has_hostel: bool = False, limit: int = 10) -> List[Dict]:
+                            has_hostel: bool = False, autonomous: bool = None, limit: int = 10) -> List[Dict]:
     local_docs = _get_local_documents()
     candidates = []
 
@@ -482,6 +482,10 @@ def get_colleges_by_filters(district: str = None, branch_code: str = None,
             continue
         if branch_code and branch_code not in c_branches:
             continue
+        if autonomous is not None:
+            c_auto = meta.get("autonomous")
+            if c_auto is not None and bool(c_auto) != bool(autonomous):
+                continue
         if has_hostel:
             has_boys = bool(meta.get("hostel_facilities_boys"))
             has_girls = bool(meta.get("hostel_facilities_girls"))
@@ -493,13 +497,23 @@ def get_colleges_by_filters(district: str = None, branch_code: str = None,
         candidates.append(d)
 
     if candidates:
-        logger.info(f"🎯 Filter match: Found {len(candidates)} colleges (District: {norm_district}, Branch: {branch_code}, Hostel: {has_hostel})")
+        # Sort by pass percentage & placement rate so premier colleges rank first
+        candidates.sort(
+            key=lambda x: (
+                float(x.get("metadata", {}).get("pass_percentage") or 0.0) +
+                float(x.get("metadata", {}).get("placement_rate") or 0.0)
+            ),
+            reverse=True
+        )
+        logger.info(f"🎯 Filter match: Found {len(candidates)} colleges (District: {norm_district}, Branch: {branch_code}, Autonomous: {autonomous}, Hostel: {has_hostel})")
         return deduplicate_docs(candidates)[:limit]
 
     try:
         q = supabase.table("documents").select("id, content, metadata").eq("metadata->>doc_type", "college_info")
         if norm_district:
             q = q.ilike("metadata->>district", norm_district)
+        if autonomous is not None:
+            q = q.eq("metadata->>autonomous", str(autonomous).lower())
         res = q.limit(limit * 2).execute()
         if res.data:
             filtered = res.data
@@ -538,6 +552,10 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
     if branch_code and "branch_code" not in active_filters:
         active_filters["branch_code"] = branch_code
 
+    # Extract autonomous intent
+    is_autonomous = "autonomous" in query_lower or active_filters.get("autonomous") is True or str(active_filters.get("autonomous", "")).lower() in ("yes", "true", "1")
+    autonomous_filter = True if is_autonomous else (False if active_filters.get("autonomous") in [False, "No", "no"] else None)
+
     # 2. SPECIFIC COLLEGE ENTITY LOOKUP
     detected_college = None
     if not compare_colleges:
@@ -564,12 +582,16 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
     is_hostel_query = "hostel" in query_lower or "mess" in query_lower or "room rent" in query_lower
     is_college_list_query = bool(district) and (
         "colleges" in query_lower or 
+        "college" in query_lower or 
+        "clgs" in query_lower or 
+        "clg" in query_lower or 
         "engineering colleges" in query_lower or 
         "what engineering" in query_lower or 
         "which college" in query_lower or 
         "what college" in query_lower or 
         "offer" in query_lower or 
         "list" in query_lower or 
+        is_autonomous or
         is_hostel_query
     )
 
@@ -578,7 +600,8 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
             district=district,
             branch_code=branch_code,
             has_hostel=is_hostel_query,
-            limit=top_k
+            autonomous=autonomous_filter,
+            limit=max(top_k, 6)
         )
         if catalog_docs:
             catalog_docs = deduplicate_docs(catalog_docs)
@@ -616,6 +639,8 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
             supabase_filter["district"] = district
         if branch_code:
             supabase_filter["branch_codes"] = [branch_code]
+        if autonomous_filter is not None:
+            supabase_filter["autonomous"] = autonomous_filter
 
     candidates = []
     if embedding_model:
@@ -645,6 +670,10 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
                     continue
                 if branch_code and branch_code not in meta.get("branch_codes", []):
                     continue
+                if autonomous_filter is not None:
+                    c_auto = meta.get("autonomous")
+                    if c_auto is not None and bool(c_auto) != bool(autonomous_filter):
+                        continue
                 filtered_local.append(d)
             candidates = filtered_local if filtered_local else local_docs[:15]
 

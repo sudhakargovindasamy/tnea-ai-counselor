@@ -400,17 +400,22 @@ async def chat(request: Request, req: QueryRequest):
 
             # 🚨 Prevent caching error messages (Poisoned Cache Fix)
             is_error = full_answer.startswith("Error:") or full_answer.startswith("[Error:") or "LLM Generation failed" in full_answer
+            is_refusal = (
+                "The provided TNEA database does not contain information to answer this." in full_answer or
+                "I don't have cutoff/closing rank data in my database" in full_answer
+            )
+            final_sources = [] if is_refusal else sources_dict
 
             # 7. Cache Response & Save Memory
             if not is_error:
-                save_to_cache(req.question, full_answer, sources_dict, overwrite=req.bypass_cache)
+                save_to_cache(req.question, full_answer, final_sources, overwrite=req.bypass_cache)
             
             # 💾 Save to conversational memory
             memory.add_message(req.session_id, "user", req.question)
             memory.add_message(req.session_id, "assistant", full_answer)
 
             # 8. Send Sources Metadata & Done Signal
-            yield f"data: {json.dumps({'sources': sources_dict})}\n\n"
+            yield f"data: {json.dumps({'sources': final_sources})}\n\n"
             yield "data: [DONE]\n\n"
 
         except Exception as e:
@@ -518,13 +523,20 @@ def query(request: Request, req: QueryRequest):
         # 7) Save to Cache & Memory (🚨 ONLY IF NOT AN ERROR)
         sources_dict = [s.model_dump() if hasattr(s, 'model_dump') else s.dict() for s in sources]
         
+        is_refusal = (
+            "The provided TNEA database does not contain information to answer this." in answer or
+            "I don't have cutoff/closing rank data in my database" in answer
+        )
+        final_sources = [] if is_refusal else sources
+        final_sources_dict = [] if is_refusal else sources_dict
+        
         if not is_error:
-            save_to_cache(req.question, answer, sources_dict, overwrite=req.bypass_cache)
+            save_to_cache(req.question, answer, final_sources_dict, overwrite=req.bypass_cache)
 
         memory.add_message(req.session_id, "user", req.question)
         memory.add_message(req.session_id, "assistant", answer)
 
-        return QueryResponse(answer=answer, sources=sources)
+        return QueryResponse(answer=answer, sources=final_sources)
 
     except Exception as e:
         tracer.log_error(str(e))
