@@ -123,14 +123,40 @@ def check_cache(question: str) -> dict[str, Any] | None:
         logger.warning(f"⚠️ Cache check error: {e}")
         return None
 
-def save_to_cache(question: str, answer: str, sources: list):
+def purge_question_cache(question: str):
+    """Purge a specific question from both L1 and L2 caches."""
+    if not question or not str(question).strip():
+        return
+    try:
+        norm_key = _L1_CACHE._normalize(question)
+        if norm_key in _L1_CACHE.cache:
+            del _L1_CACHE.cache[norm_key]
+    except Exception as e:
+        logger.debug(f"L1 question purge error: {e}")
+
+    try:
+        supabase.table("query_cache").delete().ilike("question", question.strip()).execute()
+        logger.info(f"🗑️ Purged cache for question: '{question[:50]}'")
+    except Exception as e:
+        logger.warning(f"L2 question purge error: {e}")
+
+def save_to_cache(question: str, answer: str, sources: list, overwrite: bool = False):
     """Save valid, grounded responses to both L1 (memory) and L2 (Supabase)."""
     if not sources or len(sources) == 0:
         logger.info("⚠️ Skipped caching: No verified sources found (Prevents poisoning).")
         return
         
-    if not answer or "does not contain information" in answer.lower() or "i don't have" in answer.lower():
-        logger.info("⚠️ Skipped caching: Refusal/Unanswerable response detected.")
+    if not answer or len(answer.strip()) < 15:
+        return
+
+    lower_ans = answer.lower()
+    poison_tokens = (
+        "error:", "[error:", "llm generation failed", "resource_exhausted",
+        "service unavailable", "rate limit", "503", "429", "timeout",
+        "does not contain information", "i don't have"
+    )
+    if any(tok in lower_ans for tok in poison_tokens):
+        logger.info(f"🛡️ Cache Poison Guard: Skipped caching refusal/error response for: '{question[:40]}'")
         return
 
     clean_sources = []
@@ -147,8 +173,14 @@ def save_to_cache(question: str, answer: str, sources: list):
     # 1. Save to L1 Cache instantly
     _L1_CACHE.set(question, cached_payload)
 
-    # 2. Persist to L2 Supabase Cache
+    # 2. Persist to L2 Supabase Cache (overwrite if requested)
     try:
+        if overwrite:
+            try:
+                supabase.table("query_cache").delete().eq("question", question).execute()
+            except Exception:
+                pass
+
         model = _get_embedding_model()
         emb = model.encode(question, normalize_embeddings=True).tolist()
         expires_at = (datetime.utcnow() + timedelta(days=7)).isoformat()

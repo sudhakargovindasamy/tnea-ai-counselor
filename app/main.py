@@ -28,7 +28,7 @@ from app.services.memory import memory
 from app.services.observability import RAGTracer
 from app.services.query_understanding import rewrite_query, understand_query
 from app.services.retrieval import retrieve
-from app.services.semantic_cache import check_cache, purge_all_cache, save_to_cache
+from app.services.semantic_cache import check_cache, purge_all_cache, purge_question_cache, save_to_cache
 
 logging.basicConfig(
     level=logging.INFO,
@@ -284,9 +284,9 @@ def purge_cache(admin_secret: str):
 @app.post("/feedback/downvote")
 def report_bad_answer(question: str):
     try:
-        supabase.table("query_cache").delete().eq("question", question).execute()
-        logger.info(f"👎 USER FEEDBACK: Cleared cache for question: {question[:50]}...")
-        return {"status": "success", "message": "Feedback recorded. Cache cleared for this question."}
+        purge_question_cache(question)
+        logger.info(f"👎 USER FEEDBACK: Purged cache for question: {question[:50]}...")
+        return {"status": "success", "message": "Feedback recorded. Cache purged for this question."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -309,28 +309,32 @@ async def chat(request: Request, req: QueryRequest):
         try:
             logger.info(f"🌊 [{req.session_id}] SSE Chat Query: '{req.question}'")
 
-            # 1. Check L1/L2 Caching (Latency < 1ms on repeated questions)
-            cached_response = check_cache(req.question)
-            if cached_response:
-                cached_answer = cached_response.get("answer", "")
-                cached_sources = cached_response.get("sources", [])
-                tracer.log_cache_hit(cached_answer)
-                tracer.finish()
-                
-                # Save to memory
-                memory.add_message(req.session_id, "user", req.question)
-                memory.add_message(req.session_id, "assistant", cached_answer)
+            # 1. Check L1/L2 Caching (Skipped if bypass_cache is True)
+            if not req.bypass_cache:
+                cached_response = check_cache(req.question)
+                if cached_response:
+                    cached_answer = cached_response.get("answer", "")
+                    cached_sources = cached_response.get("sources", [])
+                    tracer.log_cache_hit(cached_answer)
+                    tracer.finish()
+                    
+                    # Save to memory
+                    memory.add_message(req.session_id, "user", req.question)
+                    memory.add_message(req.session_id, "assistant", cached_answer)
 
-                # Stream cached answer in chunks for natural UI rendering
-                words = cached_answer.split(" ")
-                for i in range(0, len(words), 4):
-                    chunk = " ".join(words[i:i+4]) + " "
-                    yield f"data: {json.dumps({'token': chunk})}\n\n"
-                    await asyncio.sleep(0.01)
+                    # Stream cached answer in chunks for natural UI rendering
+                    words = cached_answer.split(" ")
+                    for i in range(0, len(words), 4):
+                        chunk = " ".join(words[i:i+4]) + " "
+                        yield f"data: {json.dumps({'token': chunk})}\n\n"
+                        await asyncio.sleep(0.01)
 
-                yield f"data: {json.dumps({'sources': cached_sources})}\n\n"
-                yield "data: [DONE]\n\n"
-                return
+                    yield f"data: {json.dumps({'sources': cached_sources})}\n\n"
+                    yield "data: [DONE]\n\n"
+                    return
+            else:
+                logger.info(f"🔄 Cache bypass requested for SSE query: '{req.question[:50]}'")
+                purge_question_cache(req.question)
 
             # 2. Query History & Translation
             history = memory.get_history(req.session_id)
@@ -399,7 +403,7 @@ async def chat(request: Request, req: QueryRequest):
 
             # 7. Cache Response & Save Memory
             if not is_error:
-                save_to_cache(req.question, full_answer, sources_dict)
+                save_to_cache(req.question, full_answer, sources_dict, overwrite=req.bypass_cache)
             
             # 💾 Save to conversational memory
             memory.add_message(req.session_id, "user", req.question)
@@ -438,14 +442,18 @@ def query(request: Request, req: QueryRequest):
     try:
         logger.info(f"[{req.session_id}] Standard Query: {req.question}")
 
-        # 1) Check L1 / L2 Cache
-        cached_response = check_cache(req.question)
-        if cached_response:
-            tracer.log_cache_hit(cached_response.get("answer", ""))
-            tracer.finish()
-            memory.add_message(req.session_id, "user", req.question)
-            memory.add_message(req.session_id, "assistant", cached_response.get("answer", ""))
-            return format_cache_response(cached_response)
+        # 1) Check L1 / L2 Cache (Skipped if bypass_cache is True)
+        if not req.bypass_cache:
+            cached_response = check_cache(req.question)
+            if cached_response:
+                tracer.log_cache_hit(cached_response.get("answer", ""))
+                tracer.finish()
+                memory.add_message(req.session_id, "user", req.question)
+                memory.add_message(req.session_id, "assistant", cached_response.get("answer", ""))
+                return format_cache_response(cached_response)
+        else:
+            logger.info(f"🔄 Cache bypass requested for query: '{req.question[:50]}'")
+            purge_question_cache(req.question)
 
         # 2) Chat History & Query Translation
         history = memory.get_history(req.session_id)
@@ -511,7 +519,7 @@ def query(request: Request, req: QueryRequest):
         sources_dict = [s.model_dump() if hasattr(s, 'model_dump') else s.dict() for s in sources]
         
         if not is_error:
-            save_to_cache(req.question, answer, sources_dict)
+            save_to_cache(req.question, answer, sources_dict, overwrite=req.bypass_cache)
 
         memory.add_message(req.session_id, "user", req.question)
         memory.add_message(req.session_id, "assistant", answer)

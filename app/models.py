@@ -9,6 +9,7 @@ class QueryRequest(BaseModel):
     top_k: int = Field(default=5, description="Number of sources (1-20)")
     filters: dict[str, Any] | None = None
     stream: bool | None = Field(default=True, description="Enable SSE token streaming")
+    bypass_cache: bool = Field(default=False, description="Bypass L1/L2 cache to force fresh generation and overwrite stale/poisoned cache")
 
     # 🛡️ Validator works with both Pydantic v1 and v2
     @validator('top_k')
