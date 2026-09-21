@@ -279,6 +279,10 @@ def extract_branch_code(query: str, filters: dict = None) -> Optional[str]:
         code = str(filters["branch_code"]).strip().upper()
         if code:
             return code
+    if filters and filters.get("department_code"):
+        code = str(filters["department_code"]).strip().upper()
+        if code:
+            return code
 
     query_lower = query.lower()
     sorted_synonyms = sorted(BRANCH_SYNONYMS.items(), key=lambda x: len(x[0]), reverse=True)
@@ -305,7 +309,7 @@ def _normalize_filters(filters: dict) -> dict:
             if isinstance(v, str):
                 v = v.strip().lower() in ("yes", "true", "1")
             clean[k] = bool(v)
-        elif k in ("tnea_code", "branch_code"):
+        elif k in ("tnea_code", "branch_code", "department_code"):
             clean[k] = str(v).strip().upper()
         else:
             clean[k] = v
@@ -425,20 +429,22 @@ def entity_lookup(college_name: str, limit: int = 10) -> List[Dict]:
 
 # ─────────────── 🚀 DIRECT CATALOG FILTERING ───────────────
 def get_colleges_by_filters(district: str = None, branch_code: str = None, 
-                            has_hostel: bool = False, autonomous: bool = None, limit: int = 10) -> List[Dict]:
+                            has_hostel: bool = False, autonomous: bool = None, limit: int = 10,
+                            department_code: str = None) -> List[Dict]:
     local_docs = _get_local_documents()
     candidates = []
 
     norm_district = DISTRICT_SYNONYMS.get(district.lower().strip(), district.title()) if district else None
+    target_code = (department_code or branch_code or "").strip().upper() or None
 
     for d in local_docs:
         meta = d.get("metadata", {})
         c_district = meta.get("district", "")
-        c_branches = meta.get("branch_codes", [])
+        c_branches = meta.get("department_codes", meta.get("branch_codes", []))
         
         if norm_district and norm_district.lower() != c_district.lower():
             continue
-        if branch_code and branch_code not in c_branches:
+        if target_code and target_code not in c_branches:
             continue
         if autonomous is not None:
             c_auto = meta.get("autonomous")
@@ -463,7 +469,7 @@ def get_colleges_by_filters(district: str = None, branch_code: str = None,
             ),
             reverse=True
         )
-        logger.info(f"🎯 Filter match: Found {len(candidates)} colleges (District: {norm_district}, Branch: {branch_code}, Autonomous: {autonomous}, Hostel: {has_hostel})")
+        logger.info(f"🎯 Filter match: Found {len(candidates)} colleges (District: {norm_district}, Branch/Dept: {target_code}, Autonomous: {autonomous}, Hostel: {has_hostel})")
         return deduplicate_docs(candidates)[:limit]
 
     try:
@@ -475,8 +481,11 @@ def get_colleges_by_filters(district: str = None, branch_code: str = None,
         res = q.limit(limit * 2).execute()
         if res.data:
             filtered = res.data
-            if branch_code:
-                filtered = [doc for doc in filtered if branch_code in doc.get("metadata", {}).get("branch_codes", [])]
+            if target_code:
+                filtered = [
+                    doc for doc in filtered
+                    if target_code in doc.get("metadata", {}).get("department_codes", doc.get("metadata", {}).get("branch_codes", []))
+                ]
             return deduplicate_docs(filtered)[:limit]
     except Exception as e:
         logger.debug(f"Supabase filter query exception: {e}")
@@ -507,8 +516,11 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
 
     if district and "district" not in active_filters:
         active_filters["district"] = district
-    if branch_code and "branch_code" not in active_filters:
-        active_filters["branch_code"] = branch_code
+    if branch_code:
+        if "branch_code" not in active_filters:
+            active_filters["branch_code"] = branch_code
+        if "department_code" not in active_filters:
+            active_filters["department_code"] = branch_code
 
     # Extract autonomous intent
     is_autonomous = "autonomous" in query_lower or active_filters.get("autonomous") is True or str(active_filters.get("autonomous", "")).lower() in ("yes", "true", "1")
@@ -625,7 +637,8 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
         meta = d.get("metadata", {})
         if district and district.lower() != meta.get("district", "").lower():
             continue
-        if branch_code and branch_code not in meta.get("branch_codes", []):
+        c_branches = meta.get("department_codes", meta.get("branch_codes", []))
+        if branch_code and branch_code not in c_branches:
             continue
         if autonomous_filter is not None:
             c_auto = meta.get("autonomous")

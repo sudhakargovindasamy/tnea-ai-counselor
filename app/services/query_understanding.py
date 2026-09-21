@@ -32,6 +32,7 @@ class QueryUnderstandingSchema(BaseModel):
         default=None, 
         description="Strict branch code mapping. Examples: Computer Science/CSE->CS, Mechanical->ME, AI&DS->AD, ECE->EC, EEE->EE, IT->IT, Civil->CE, Cyber Security->CY, AI&ML->AL, Bio Medical->BM, Bio Tech->BT, Automobile->AU, Chemical->CH, Aeronautical->AE, Agricultural->AG"
     )
+    department_code: str | None = Field(default=None, description="Department code alias")
     nba_accredited: bool | None = Field(default=None)
     numerical_metric: Literal["placement", "pass_percentage", "total_intake", "fees", "hostel_rent", "transport", "cutoff", "marks"] | None = Field(default=None)
     numerical_operator: Literal["highest", "lowest", "greater_than", "less_than"] | None = Field(default=None)
@@ -163,6 +164,10 @@ Question: {question}
     if result:
         # Convert Pydantic model to dict, excluding None values to keep payload clean
         extracted = result.model_dump(exclude_none=True)
+        if "branch_code" in extracted and "department_code" not in extracted:
+            extracted["department_code"] = extracted["branch_code"]
+        elif "department_code" in extracted and "branch_code" not in extracted:
+            extracted["branch_code"] = extracted["department_code"]
         logger.info(f"🧠 Extracted: {extracted}")
         return extracted
         

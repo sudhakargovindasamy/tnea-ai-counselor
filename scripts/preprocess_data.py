@@ -176,7 +176,9 @@ def get_branch_full_name(code: str) -> str:
 # ═══════════════════════════════════════════════════════════
 print("📥 Loading raw datasets...")
 colleges_path = find_raw_file("colleges_db_df.csv")
-branches_path = find_raw_file("branches_db_df.csv")
+branches_path = find_raw_file("college_branches_rows.csv")
+if not os.path.exists(branches_path) or branches_path == "college_branches_rows.csv":
+    branches_path = find_raw_file("branches_db_df.csv")
 perf_path = find_raw_file("performance_db_df.csv")
 adm_path = find_raw_file("tnea_admission_info.json")
 
@@ -188,20 +190,95 @@ print(f"   ✓ Colleges loaded: {len(colleges_df)} rows from {colleges_path}")
 print(f"   ✓ Branches loaded: {len(branches_df)} rows from {branches_path}")
 print(f"   ✓ Performance loaded: {len(perf_df)} rows from {perf_path}")
 
-# Pre-index branches by tnea_code
+# Pre-index branches by tnea_code & create rich standalone branch documents
 branches_by_tnea: dict[str, list[dict[str, Any]]] = {}
+branch_documents = []
+
 for _, row in branches_df.iterrows():
     t_code = str(row["tnea_code"]).strip()
     if not t_code:
         continue
-    branches_by_tnea.setdefault(t_code, []).append({
-        "sl_no": row["sl_no"],
-        "branch_code": str(row["branch_code"]).strip().upper(),
-        "approved_intake": int(float(row["approved_intake"])) if str(row["approved_intake"]).strip() else 0,
-        "year_of_starting": int(float(row["year_of_starting"])) if str(row["year_of_starting"]).strip() else None,
-        "nba_accredited": str(row["nba_accredited"]).strip().lower() in ["yes", "true", "1"],
-        "accreditation_valid_upto": str(row["accreditation_valid_upto"]).strip(),
-        "approval_note": str(row["approval_note"]).strip()
+
+    dept_code = str(row.get("department_code", row.get("branch_code", ""))).strip().upper()
+    dept_name = str(row.get("department_name", "")).strip()
+    if not dept_name:
+        dept_name = get_branch_full_name(dept_code)
+
+    appr_marker = str(row.get("approval_marker", row.get("approval_note", ""))).strip()
+    if appr_marker.lower() in ("nan", "none"):
+        appr_marker = ""
+
+    intake_raw = str(row.get("approved_intake", "")).strip()
+    intake = int(float(intake_raw)) if intake_raw and intake_raw.lower() not in ("nan", "none") else 0
+
+    yos_raw = str(row.get("year_of_starting", "")).strip()
+    yos = int(float(yos_raw)) if yos_raw and yos_raw.lower() not in ("nan", "none") else None
+
+    nba_raw = str(row.get("nba_accredited", "")).strip()
+    nba_bool = nba_raw.lower() in ["yes", "true", "1"]
+    nba_str_val = nba_raw if nba_raw and nba_raw.lower() not in ("nan", "none") else None
+
+    valid_upto = str(row.get("accreditation_valid_upto", "")).strip()
+    if valid_upto.lower() in ("nan", "none"):
+        valid_upto = ""
+    elif valid_upto.endswith(".0"):
+        valid_upto = valid_upto[:-2]
+
+    b_id_raw = str(row.get("id", "")).strip()
+    b_id = int(float(b_id_raw)) if b_id_raw and b_id_raw.lower() not in ("nan", "none") else None
+
+    sl_no_raw = str(row.get("sl_no", "")).strip()
+    sl_no = int(float(sl_no_raw)) if sl_no_raw and sl_no_raw.lower() not in ("nan", "none") else None
+
+    branch_info = {
+        "id": b_id,
+        "sl_no": sl_no,
+        "department_code": dept_code,
+        "department_name": dept_name,
+        "branch_code": dept_code,  # Backward compatibility
+        "approved_intake": intake,
+        "year_of_starting": yos,
+        "nba_accredited": nba_bool,
+        "nba_accredited_str": nba_str_val,
+        "accreditation_valid_upto": valid_upto,
+        "approval_marker": appr_marker,
+        "approval_note": appr_marker  # Backward compatibility
+    }
+    branches_by_tnea.setdefault(t_code, []).append(branch_info)
+
+    # Format standalone branch chunk (Phase 4 standard format)
+    # TNEA Code: {tnea_code} offers {department_name} ({department_code}). Approved Intake: {approved_intake}. Year of Starting: {year_of_starting}. NBA Accredited: {nba_accredited}. Approval Marker: {approval_marker}.
+    chunk_parts = [f"TNEA Code: {t_code} offers {dept_name} ({dept_code}). Approved Intake: {intake}."]
+    if yos is not None:
+        chunk_parts.append(f"Year of Starting: {yos}.")
+    if nba_str_val:
+        nba_desc = nba_str_val
+        if valid_upto:
+            nba_desc += f" (Valid upto {valid_upto})"
+        chunk_parts.append(f"NBA Accredited: {nba_desc}.")
+    if appr_marker:
+        chunk_parts.append(f"Approval Marker: {appr_marker}.")
+    b_content = " ".join(chunk_parts)
+
+    b_meta = {
+        "id": b_id,
+        "tnea_code": t_code,
+        "sl_no": sl_no,
+        "department_code": dept_code,
+        "department_name": dept_name,
+        "approved_intake": intake,
+        "year_of_starting": yos,
+        "nba_accredited": nba_str_val,
+        "accreditation_valid_upto": valid_upto if valid_upto else None,
+        "approval_marker": appr_marker if appr_marker else None,
+        "branch_code": dept_code,  # Backward compatibility
+        "approval_note": appr_marker if appr_marker else None,  # Backward compatibility
+        "doc_type": "branch_info",
+        "source": os.path.basename(branches_path)
+    }
+    branch_documents.append({
+        "content": b_content,
+        "metadata": b_meta
     })
 
 # Pre-index performance by tnea_code
@@ -277,28 +354,34 @@ for _, r in colleges_df.iterrows():
 
     # ── Branches ──
     college_branches = branches_by_tnea.get(tnea_code, [])
-    branch_codes = []
+    department_codes = []
+    department_names = []
     branches_summary_parts = []
     branches_detailed_lines = []
     total_approved_intake = 0
 
     for b in college_branches:
-        b_code = b["branch_code"]
-        if b_code and b_code not in branch_codes:
-            branch_codes.append(b_code)
+        d_code = b["department_code"]
+        d_name = b["department_name"]
+        if d_code and d_code not in department_codes:
+            department_codes.append(d_code)
+            department_names.append(d_name)
         
         intake = b["approved_intake"]
         total_approved_intake += intake
-        branches_summary_parts.append(f"{b_code} (Intake {intake})")
+        branches_summary_parts.append(f"{d_code} (Intake {intake})")
         
+        detail_parts = [f"{d_code}: {d_name} | Intake: {intake} seats"]
+        if b["year_of_starting"]:
+            detail_parts.append(f"Started: {b['year_of_starting']}")
         nba_str = "NBA: Accredited" if b["nba_accredited"] else "NBA: No"
         if b["accreditation_valid_upto"]:
             nba_str += f" (Valid till {b['accreditation_valid_upto']})"
-        
-        b_full = get_branch_full_name(b_code)
-        branches_detailed_lines.append(
-            f"  - {b_code}: {b_full} | Intake: {intake} seats | {nba_str}"
-        )
+        detail_parts.append(nba_str)
+        if b["approval_marker"]:
+            detail_parts.append(f"Approval Marker: {b['approval_marker']}")
+            
+        branches_detailed_lines.append("  - " + " | ".join(detail_parts))
 
     branches_summary_str = ", ".join(branches_summary_parts) if branches_summary_parts else "None listed"
 
@@ -333,7 +416,7 @@ for _, r in colleges_df.iterrows():
 
     # Detailed Branch Section
     if branches_detailed_lines:
-        doc_lines.append(f"Branches Offered ({len(branch_codes)} branches, Total Intake: {total_approved_intake} seats):")
+        doc_lines.append(f"Branches Offered ({len(department_codes)} branches, Total Intake: {total_approved_intake} seats):")
         doc_lines.extend(branches_detailed_lines)
 
     # Hostel and Amenities Section
@@ -383,8 +466,11 @@ for _, r in colleges_df.iterrows():
         "tnea_code": str(tnea_code),
         "college_name": college_name,
         "district": district,
-        "branch_codes": branch_codes,
-        "branch_intakes": {b["branch_code"]: b["approved_intake"] for b in college_branches},
+        "department_codes": department_codes,
+        "branch_codes": department_codes,  # Backward compatibility
+        "department_names": department_names,
+        "department_intakes": {b["department_code"]: b["approved_intake"] for b in college_branches},
+        "branch_intakes": {b["department_code"]: b["approved_intake"] for b in college_branches},  # Backward compatibility
         "autonomous": autonomous_bool,
         "placement_rate": placement_val,
         "pass_percentage": pass_pct,
@@ -504,15 +590,37 @@ if admission_documents:
         json.dump(admission_documents, f, indent=2, ensure_ascii=False)
     print(f"   ✓ Saved {len(admission_documents)} items to {adm_json_path}")
 
+# 4. Standalone Branch documents CSV & JSON
+if branch_documents:
+    branch_records = [
+        {"content": d["content"], "metadata": json.dumps(d["metadata"])}
+        for d in branch_documents
+    ]
+    branch_df = pd.DataFrame(branch_records)
+    branch_csv_path = os.path.join(PROCESSED_DIR, "branch_documents.csv")
+    branch_df.to_csv(branch_csv_path, index=False)
+    print(f"   ✓ Saved {len(branch_df)} rows to {branch_csv_path}")
+
+    branch_json_path = os.path.join(PROCESSED_DIR, "branch_documents.json")
+    with open(branch_json_path, "w", encoding="utf-8") as f:
+        json.dump(branch_documents, f, indent=2, ensure_ascii=False)
+    print(f"   ✓ Saved {len(branch_documents)} items to {branch_json_path}")
+
 print("\n" + "=" * 65)
 print("🎯 PREPROCESSING SUMMARY")
 print("=" * 65)
 print(f"• Total Rich College Documents:   {len(college_documents)}")
+print(f"• Total Branch Documents:         {len(branch_documents)}")
 print(f"• Total Admission Rule Documents: {len(admission_documents)}")
-print("• Sample Document Preview:")
+print("• Sample College Document Preview:")
 print("-" * 65)
 if college_documents:
     print(college_documents[0]["content"][:320] + "\n...")
-    print("Sample Metadata:", json.dumps(college_documents[0]["metadata"], indent=2))
+    print("Sample College Metadata:", json.dumps(college_documents[0]["metadata"], indent=2))
+if branch_documents:
+    print("-" * 65)
+    print("• Sample Branch Document Preview:")
+    print(branch_documents[0]["content"])
+    print("Sample Branch Metadata:", json.dumps(branch_documents[0]["metadata"], indent=2))
 print("=" * 65)
 print("✅ Done! Data is ready for Supabase ingestion via scripts/08_master_ingest.py")

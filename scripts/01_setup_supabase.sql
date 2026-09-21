@@ -11,16 +11,20 @@ CREATE TABLE documents (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now())
 );
 
--- Branch details (SQL filtering: branch_code, NBA, intake)
+-- Branch details (SQL filtering: department_code, department_name, NBA, intake)
 CREATE TABLE branches (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
   tnea_code TEXT NOT NULL,
   sl_no INT,
-  branch_code TEXT NOT NULL,
+  department_code TEXT NOT NULL,
+  department_name TEXT,
   approved_intake INT,
   year_of_starting FLOAT,
   nba_accredited TEXT,
   accreditation_valid_upto TEXT,
+  approval_marker TEXT,
+  -- Backward-compatibility aliases
+  branch_code TEXT,
   approval_note TEXT
 );
 
@@ -108,6 +112,7 @@ $$;
 CREATE INDEX ON documents USING ivfflat (embedding vector_cosine_ops) WITH (lists = 20);
 CREATE INDEX ON documents USING gin (metadata);
 CREATE INDEX ON branches (tnea_code);
+CREATE INDEX ON branches (department_code);
 CREATE INDEX ON branches (branch_code);
 CREATE INDEX ON performance (tnea_code);
 CREATE INDEX ON performance (pass_percentage);

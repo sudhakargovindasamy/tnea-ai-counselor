@@ -102,18 +102,30 @@ else:
 # ============================================
 # BRANCHES (skip if complete)
 # ============================================
-df_branches = pd.read_csv("data/raw/branches_db_df.csv").fillna("")
+branches_file = "data/raw/college_branches_rows.csv" if os.path.exists("data/raw/college_branches_rows.csv") else "data/raw/branches_db_df.csv"
+df_branches = pd.read_csv(branches_file).fillna("")
 n_branches = count_by_doc_type("branch_info")
 if n_branches >= len(df_branches):
     print(f"\n✅ Branches already ingested ({n_branches}). Skipping.")
 else:
     if n_branches > 0:
         supabase.table("documents").delete().eq("metadata->>doc_type", "branch_info").execute()
-    ingest_dataframe(df_branches, "branches_db_df.csv", "branch_info",
-                     lambda r: {"tnea_code": str(r["tnea_code"]),
-                                "branch_code": r["branch_code"],
-                                "approved_intake": str(r["approved_intake"]),
-                                "nba_accredited": r["nba_accredited"]})
+    ingest_dataframe(df_branches, os.path.basename(branches_file), "branch_info",
+                     lambda r: {
+                         "id": int(float(r["id"])) if "id" in r and str(r["id"]).strip() not in ("", "nan", "NaN") else None,
+                         "tnea_code": str(r["tnea_code"]).strip(),
+                         "sl_no": int(float(r["sl_no"])) if "sl_no" in r and str(r["sl_no"]).strip() not in ("", "nan", "NaN") else None,
+                         "department_code": str(r.get("department_code", r.get("branch_code", ""))).strip().upper(),
+                         "department_name": str(r.get("department_name", "")).strip(),
+                         "approved_intake": int(float(r["approved_intake"])) if str(r.get("approved_intake", "")).strip() not in ("", "nan", "NaN") else 0,
+                         "year_of_starting": int(float(r["year_of_starting"])) if str(r.get("year_of_starting", "")).strip() not in ("", "nan", "NaN") else None,
+                         "nba_accredited": str(r.get("nba_accredited", "")).strip() if str(r.get("nba_accredited", "")).strip() not in ("", "nan", "NaN") else None,
+                         "accreditation_valid_upto": str(r.get("accreditation_valid_upto", "")).strip() if str(r.get("accreditation_valid_upto", "")).strip() not in ("", "nan", "NaN") else None,
+                         "approval_marker": str(r.get("approval_marker", r.get("approval_note", ""))).strip() or None,
+                         # Backward compatibility
+                         "branch_code": str(r.get("department_code", r.get("branch_code", ""))).strip().upper(),
+                         "approval_note": str(r.get("approval_marker", r.get("approval_note", ""))).strip() or None
+                     })
 
 # ============================================
 # ADMISSION RULES (flattened text)
