@@ -129,6 +129,7 @@ TAMIL_NADU_DISTRICTS = set(DISTRICT_SYNONYMS.keys()) | {v.lower() for v in DISTR
 _COLLEGE_MAP_CACHE: Dict[str, Dict] = {}
 _COLLEGE_DIR_CACHE: Dict[str, str] = {}
 _COLLEGE_DIR_CLEAN_CACHE: Dict[str, str] = {}
+_COLLEGE_INDEX: List[Dict[str, Any]] = []
 _LOCAL_DOCUMENTS: Optional[List[Dict[str, Any]]] = None
 _LOCAL_ADMISSION_DOCUMENTS: Optional[List[Dict[str, Any]]] = None
 
@@ -174,110 +175,172 @@ def _get_local_admission_documents() -> List[Dict[str, Any]]:
     _LOCAL_ADMISSION_DOCUMENTS = []
     return _LOCAL_ADMISSION_DOCUMENTS
 
+COLLEGE_PREFIXES = {"sri", "shri", "dr", "smt", "prof", "st", "saint", "the"}
+COLLEGE_STOPWORDS = {
+    "engineering", "enginering", "college", "colleges", "clg", "clgs",
+    "technology", "technolgoy", "tech", "engg", "eng", "institute", "institutes",
+    "institution", "institutions", "autonomous", "deemed", "university", "campus",
+    "of", "and", "for", "in", "at", "naac", "grade"
+}
+
+def _extract_college_clean_words(text: str) -> List[str]:
+    clean = re.sub(r"[^\w\s]", " ", text.lower())
+    return [w for w in clean.split() if w not in COLLEGE_PREFIXES and w not in COLLEGE_STOPWORDS and len(w) > 2]
+
 def _load_college_caches():
-    global _COLLEGE_MAP_CACHE, _COLLEGE_DIR_CACHE, _COLLEGE_DIR_CLEAN_CACHE
-    if _COLLEGE_MAP_CACHE:
+    global _COLLEGE_MAP_CACHE, _COLLEGE_DIR_CACHE, _COLLEGE_DIR_CLEAN_CACHE, _COLLEGE_INDEX
+    if _COLLEGE_INDEX:
         return
-
-    stopwords = {"engineering", "college", "colleges", "clg", "clgs", "technology", "institute", "of", "and", 
-                 "autonomous", "the", "for", "engg", "eng", "tech", "enginering", "technolgoy", "naac", "grade"}
-
-    try:
-        res = supabase.table("documents").select("metadata").eq("metadata->>doc_type", "college_info").execute()
-        if res.data:
-            for row in res.data:
-                meta = row.get("metadata", {})
-                tnea_code = str(meta.get("tnea_code", ""))
-                name = meta.get("college_name", "")
-                if tnea_code and name:
-                    _COLLEGE_MAP_CACHE[tnea_code] = meta
-                    name_lower = name.lower()
-                    _COLLEGE_DIR_CACHE[name_lower] = name
-                    core_name = name_lower.split(",")[0].split("(")[0].strip()
-                    clean_name = core_name
-                    for word in stopwords:
-                        clean_name = clean_name.replace(word, "")
-                    clean_name = " ".join(clean_name.split())
-                    if clean_name and clean_name not in TAMIL_NADU_DISTRICTS:
-                        _COLLEGE_DIR_CLEAN_CACHE[name_lower] = clean_name
-            logger.info(f"✅ Cached {len(_COLLEGE_MAP_CACHE)} colleges into memory from Supabase.")
-            return
-    except Exception as e:
-        logger.debug(f"Supabase cache warmup skipped (using local fallback): {e}")
 
     local_docs = _get_local_documents()
     for doc in local_docs:
         meta = doc.get("metadata", {})
-        tnea_code = str(meta.get("tnea_code", ""))
+        tnea_code = str(meta.get("tnea_code", "")).strip()
         name = meta.get("college_name", "")
         if tnea_code and name:
             _COLLEGE_MAP_CACHE[tnea_code] = meta
             name_lower = name.lower()
             _COLLEGE_DIR_CACHE[name_lower] = name
-            core_name = name_lower.split(",")[0].split("(")[0].strip()
-            clean_name = core_name
-            for word in stopwords:
-                clean_name = clean_name.replace(word, "")
-            clean_name = " ".join(clean_name.split())
+
+            core = name.split("(")[0].split(",")[0].strip()
+            words = _extract_college_clean_words(core)
+            fused = "".join(words)
+
+            _COLLEGE_INDEX.append({
+                "code": tnea_code,
+                "name": name,
+                "core": core,
+                "core_lower": core.lower(),
+                "words": set(words),
+                "words_list": words,
+                "fused": fused,
+                "doc": doc
+            })
+
+            clean_name = " ".join(words)
             if clean_name and clean_name not in TAMIL_NADU_DISTRICTS:
                 _COLLEGE_DIR_CLEAN_CACHE[name_lower] = clean_name
 
-    logger.info(f"✅ Cached {len(_COLLEGE_MAP_CACHE)} colleges into memory from local dataset.")
+    logger.info(f"✅ Cached {len(_COLLEGE_INDEX)} colleges into universal memory index.")
 
-# ═══════════════ 🧠 IN-MEMORY FUZZY RESOLVER ═══════════════
-def fuzzy_resolve_college(user_input: str) -> Optional[str]:
-    if not user_input:
+# ═══════════════ 🧠 UNIVERSAL MULTI-STAGE RESOLVER ═══════════════
+def resolve_college_entity(query_or_name: str) -> Optional[Dict[str, Any]]:
+    """
+    Universal multi-stage college entity resolver.
+    Handles typos, spacing variations, compound words ('sairam' vs 'sai ram'),
+    and missing prefixes across all 418+ TNEA institutions without manual aliases.
+    """
+    if not query_or_name or not str(query_or_name).strip():
         return None
     _load_college_caches()
-    if not _COLLEGE_DIR_CACHE:
+    if not _COLLEGE_INDEX:
         return None
 
-    expanded_input = user_input.lower().strip()
+    raw_input = query_or_name.strip()
+    lower_input = raw_input.lower()
+
+    # 1. Check direct 4-digit TNEA Code
+    code_match = re.search(r"\b(\d{4})\b", raw_input)
+    if code_match:
+        found_code = code_match.group(1)
+        for item in _COLLEGE_INDEX:
+            if item["code"] == found_code:
+                logger.info(f"🧠 Matched TNEA code: {found_code} -> {item['name']}")
+                return item["doc"]
+
+    # 2. Check Alias dictionary
     for alias, full_name in COLLEGE_ALIASES.items():
         pattern = rf"\b{re.escape(alias)}\b"
-        if re.search(pattern, expanded_input):
+        if re.search(pattern, lower_input):
+            # If query specifies a district, disambiguate across multi-campus institutions
+            user_district = None
+            for d_name in TAMIL_NADU_DISTRICTS:
+                if re.search(rf"\b{re.escape(d_name)}\b", lower_input):
+                    user_district = d_name
+                    break
+
+            if user_district:
+                for item in _COLLEGE_INDEX:
+                    if (alias in item["fused"] or full_name.lower() in item["name"].lower()) and user_district in item["name"].lower():
+                        logger.info(f"🧠 Alias + District match: '{alias}' in '{user_district}' -> '{item['name']}'")
+                        return item["doc"]
+
             logger.info(f"🧠 Alias match: '{alias}' -> '{full_name}'")
-            return full_name
+            for item in _COLLEGE_INDEX:
+                if full_name.lower() in item["name"].lower() or item["name"].lower() in full_name.lower():
+                    return item["doc"]
 
-    stopwords = {"engineering", "college", "colleges", "clg", "clgs", "technology", "institute", "of", "and", 
-                 "autonomous", "the", "for", "engg", "eng", "tech", "offer", "does", "is", 
-                 "available", "courses", "which", "what", "are", "in", "with", "naac", "grade"}
-    
-    clean_input = expanded_input
-    for word in stopwords:
-        clean_input = re.sub(rf"\b{re.escape(word)}\b", "", clean_input)
-    clean_input = " ".join(clean_input.split())
-    input_nospace = clean_input.replace(" ", "")
-
-    if not input_nospace or clean_input in TAMIL_NADU_DISTRICTS or input_nospace in TAMIL_NADU_DISTRICTS:
+    # If the input is clearly a search / listing intent sentence, skip entity resolution
+    is_search_intent = any(
+        re.search(rf"\b{re.escape(w)}\b", lower_input)
+        for w in [
+            "what", "which", "how", "list", "top", "best", "colleges", "clgs",
+            "have", "has", "offer", "offers", "offering", "available",
+            "courses", "course", "branch", "branches", "department", "departments",
+            "any", "show", "find", "where"
+        ]
+    )
+    if is_search_intent:
         return None
-    
-    best_match = None
-    highest_score = 0.0
-    
-    for db_name_lower, clean_db in _COLLEGE_DIR_CLEAN_CACHE.items():
-        db_nospace = clean_db.replace(" ", "")
-        
-        if db_nospace in TAMIL_NADU_DISTRICTS or clean_db in TAMIL_NADU_DISTRICTS:
+
+    q_words = _extract_college_clean_words(lower_input)
+    q_fused = "".join(q_words)
+
+    candidates = []
+    for item in _COLLEGE_INDEX:
+        dist_bonus = 10.0 if any(w in item["name"].lower() for w in q_words if w in TAMIL_NADU_DISTRICTS) else 0.0
+
+        # A. Exact core title in query (e.g. 'sri sai ram engineering college' in query)
+        if len(item["core_lower"]) >= 6 and item["core_lower"] in lower_input:
+            candidates.append((len(item["core_lower"]), 25.0 + dist_bonus, item))
             continue
-            
-        if len(db_nospace) >= 5 and db_nospace in input_nospace:
-            return _COLLEGE_DIR_CACHE[db_name_lower]
-        if len(input_nospace) >= 5 and input_nospace in db_nospace:
-            return _COLLEGE_DIR_CACHE[db_name_lower]
-            
-        score1 = difflib.SequenceMatcher(None, clean_input, clean_db).ratio()
-        score2 = difflib.SequenceMatcher(None, input_nospace, db_nospace).ratio()
-        
-        score = max(score1, score2)
-        if score > highest_score:
-            highest_score = score
-            best_match = db_name_lower
-            
-    if highest_score > 0.75:
-        exact_name = _COLLEGE_DIR_CACHE[best_match]
-        logger.info(f"🧠 Fuzzy matched '{user_input}' to '{exact_name}' (Score: {highest_score:.2f})")
-        return exact_name
+
+        # B. Exact fused brand match (e.g. 'sairam' matching 'sairam' in fused query or word)
+        if item["fused"] and len(item["fused"]) >= 4:
+            pattern = rf"\b{re.escape(item['fused'])}\b"
+            if re.search(pattern, lower_input) or any(item["fused"] == w for w in q_words) or item["fused"] == q_fused:
+                candidates.append((len(item["fused"]), 20.0 + dist_bonus, item))
+                continue
+
+        # C. All distinctive words of college present in query (e.g. 'sai' and 'ram' both in query)
+        if len(item["words"]) >= 2 and item["words"].issubset(set(q_words)):
+            candidates.append((sum(len(w) for w in item["words"]), 15.0 + dist_bonus, item))
+            continue
+
+        # D. Single distinctive word (>= 5 characters, e.g. 'saranathan', 'kumaraguru', 'mepco', 'velammal')
+        distinctive = [w for w in item["words"] if len(w) >= 5]
+        if distinctive and all(w in q_words for w in distinctive):
+            candidates.append((sum(len(w) for w in distinctive), 10.0 + dist_bonus, item))
+            continue
+
+    if candidates:
+        candidates.sort(key=lambda x: (x[1], x[0]), reverse=True)
+        best_doc = candidates[0][2]["doc"]
+        logger.info(f"🧠 Universal entity match: '{query_or_name}' -> '{candidates[0][2]['name']}' (Score: {candidates[0][1]})")
+        return best_doc
+
+    # E. Fuzzy fallback for minor typos on fused brand names (threshold 0.80)
+    best_fuzzy = None
+    best_fuzzy_score = 0.0
+    for item in _COLLEGE_INDEX:
+        if len(item["fused"]) >= 5:
+            for qw in q_words:
+                if len(qw) >= 4:
+                    s = difflib.SequenceMatcher(None, qw, item["fused"]).ratio()
+                    if s > best_fuzzy_score:
+                        best_fuzzy_score = s
+                        best_fuzzy = item
+
+    if best_fuzzy_score >= 0.80 and best_fuzzy:
+        logger.info(f"🧠 Fuzzy entity match: '{query_or_name}' -> '{best_fuzzy['name']}' (Score: {best_fuzzy_score:.2f})")
+        return best_fuzzy["doc"]
+
+    return None
+
+def fuzzy_resolve_college(user_input: str) -> Optional[str]:
+    doc = resolve_college_entity(user_input)
+    if doc:
+        return doc.get("metadata", {}).get("college_name")
     return None
 
 # ─────────────── 🛠️ QUERY PARSING HELPERS ───────────────
@@ -424,6 +487,11 @@ def rewrite_query_with_history(current_question: str, chat_history: list) -> str
 def entity_lookup(college_name: str, limit: int = 10) -> List[Dict]:
     if not college_name or not str(college_name).strip():
         return []
+
+    # 1. Primary: Universal multi-stage resolver
+    resolved_doc = resolve_college_entity(college_name)
+    if resolved_doc:
+        return [resolved_doc]
         
     resolved_alias = COLLEGE_ALIASES.get(college_name.lower().strip())
     if resolved_alias:
@@ -457,12 +525,6 @@ def entity_lookup(college_name: str, limit: int = 10) -> List[Dict]:
             return res.data
     except Exception as e:
         logger.debug(f"Supabase entity lookup exception: {e}")
-
-    fuzzy_name = fuzzy_resolve_college(college_name)
-    if fuzzy_name:
-        for d in local_docs:
-            if fuzzy_name.lower().split(",")[0].strip() in d.get("metadata", {}).get("college_name", "").lower():
-                return [d]
 
     return []
 
@@ -540,9 +602,31 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
     _load_models()
     filters = _normalize_filters(filters)
 
-    # Query rewriting is already performed upstream in app/main.py before retrieval
     active_filters = dict(filters) if filters else {}
     query_lower = query.lower()
+
+    # 0. COMPARISON QUERIES
+    resolved_compare_names = list(compare_colleges) if compare_colleges else []
+    if not resolved_compare_names and ("compare " in query_lower or " vs " in query_lower or " versus " in query_lower):
+        parts = re.split(r"\b(?:compare|and|vs|versus|with)\b", query_lower)
+        candidates = [p.strip() for p in parts if len(p.strip()) >= 3]
+        for cand in candidates:
+            m = resolve_college_entity(cand)
+            if m and cand not in resolved_compare_names:
+                resolved_compare_names.append(cand)
+
+    if resolved_compare_names:
+        compare_docs = []
+        for c_name in resolved_compare_names:
+            matched_doc = resolve_college_entity(c_name)
+            if matched_doc and matched_doc not in compare_docs:
+                compare_docs.append(matched_doc)
+        if len(compare_docs) >= 2:
+            compare_docs = deduplicate_docs(compare_docs)
+            for c in compare_docs:
+                c["rerank_score"] = 10.0
+            logger.info(f"✅ Found {len(compare_docs)} colleges for comparison: {resolved_compare_names}")
+            return compare_docs[:top_k], format_context_xml(compare_docs[:top_k])
 
     # 1. CUTOFF / CLOSING RANK QUERIES
     if "cutoff" in query_lower or "closing rank" in query_lower:
@@ -565,32 +649,20 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
     is_autonomous = "autonomous" in query_lower or active_filters.get("autonomous") is True or str(active_filters.get("autonomous", "")).lower() in ("yes", "true", "1")
     autonomous_filter = True if is_autonomous else (False if active_filters.get("autonomous") in [False, "No", "no"] else None)
 
-    # 2. SPECIFIC COLLEGE ENTITY LOOKUP
-    detected_college = None
-    if not compare_colleges:
-        college_from_filter = active_filters.pop("college_name", None)
-        if college_from_filter:
-            detected_college = college_from_filter
-        else:
-            for alias, full_name in COLLEGE_ALIASES.items():
-                if re.search(rf"\b{re.escape(alias)}\b", query_lower):
-                    detected_college = full_name
-                    break
-
+    # 2. SPECIFIC COLLEGE ENTITY LOOKUP (Universal Multi-Stage Resolver)
+    detected_college = active_filters.pop("college_name", None)
+    entity_doc = None
     if detected_college:
-        logger.info(f"🔍 Entity lookup: '{detected_college}'")
-        exact = entity_lookup(detected_college, limit=5)
-        if exact:
-            exact = deduplicate_docs(exact)
-            for c in exact:
-                c["rerank_score"] = 10.0
-            logger.info(f"✅ Found {len(exact)} documents for college entity '{detected_college}'")
-            return exact[:top_k], format_context_xml(exact[:top_k])
-        elif not district:
-            # Explicit college queried but does not exist in TNEA database (e.g. Sudhakar College of Engineering)
-            return None, f"The college '{detected_college}' does not exist in the official TNEA database. Please verify the college name or check if it participates in TNEA counselling."
+        entity_doc = resolve_college_entity(detected_college)
+    if not entity_doc and not compare_colleges:
+        entity_doc = resolve_college_entity(query)
 
-    # 3. DIRECT CATALOG FILTERING (Runs BEFORE specific college fallback to avoid false refusals)
+    if entity_doc:
+        doc_copy = dict(entity_doc)
+        doc_copy["rerank_score"] = 10.0
+        return [doc_copy], format_context_xml([doc_copy])
+
+    # 3. DIRECT CATALOG FILTERING (Runs for listing and category searches)
     is_hostel_query = "hostel" in query_lower or "mess" in query_lower or "room rent" in query_lower
     is_college_list_query = (bool(district) or bool(branch_code) or is_autonomous or is_hostel_query) and (
         "colleges" in query_lower or 
@@ -624,43 +696,26 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
                 c["rerank_score"] = 9.0
             return catalog_docs, format_context_xml(catalog_docs)
 
-    # 4. Also check if the raw query was asking for a specific named college
+    # 4. Check if the user specifically asked for an explicit NON-EXISTENT college entity
     is_search_or_list_intent = any(
         re.search(rf"\b{re.escape(w)}\b", query_lower)
         for w in [
             "what", "which", "how", "list", "top", "best", "colleges", "clgs",
             "have", "has", "offer", "offers", "offering", "available",
             "courses", "course", "branch", "branches", "department", "departments",
-            "any", "show", "find", "where"
+            "any", "show", "find", "where", "lowest", "highest", "minimum", "maximum"
         ]
     )
-    if not detected_college and not branch_code and not district and not is_search_or_list_intent and any(w in query_lower for w in ["college", "institute", "campus"]):
-        clean_q = re.sub(r"[^\w\s]", " ", query_lower)
-        stop = {"engineering", "college", "colleges", "clg", "clgs", "technology", "institute", "of", "and", "in", "with", "the", "for", "at"}
-        college_keywords = [w for w in clean_q.split() if w not in stop and len(w) > 2]
-        if college_keywords:
-            local_docs = _get_local_documents()
-            matched = []
-            for d in local_docs:
-                c_name = d.get("metadata", {}).get("college_name", "").lower()
-                if all(kw in c_name for kw in college_keywords if len(kw) > 3):
-                    matched.append(d)
-            if matched:
-                return matched[:top_k], format_context_xml(matched[:top_k])
-            else:
-                # Specific named college queried does not exist in TNEA database!
-                return None, f"The college '{query.strip()}' does not exist in the official TNEA database. Please verify the college name or check if it participates in TNEA counselling."
 
-    # 4. FALLBACK FUZZY ENTITY RESOLUTION
-    if not compare_colleges:
-        fuzzy_match = fuzzy_resolve_college(query)
-        if fuzzy_match:
-            exact = entity_lookup(fuzzy_match, limit=5)
-            if exact:
-                exact = deduplicate_docs(exact)
-                for c in exact:
-                    c["rerank_score"] = 10.0
-                return exact[:top_k], format_context_xml(exact[:top_k])
+    explicit_target = detected_college
+    if not explicit_target and not is_search_or_list_intent and not branch_code and not district:
+        if any(w in query_lower for w in ["college", "institute", "campus"]):
+            tokens = [w for w in re.sub(r"[^\w\s]", " ", query_lower).split() if w not in {"tell", "me", "about", "details", "of", "the", "in", "is", "for", "engineering", "college", "colleges", "technology", "institute"} and len(w) > 2]
+            if tokens:
+                explicit_target = query.strip()
+
+    if explicit_target and not is_search_or_list_intent:
+        return None, f"The college '{explicit_target}' does not exist in the official TNEA database. Please verify the college name or check if it participates in TNEA counselling."
 
     # 5. ROUTING: ADMISSION RULES
     is_admission_query = bool(re.search(
