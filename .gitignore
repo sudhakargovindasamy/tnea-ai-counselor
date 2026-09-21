@@ -46,4 +46,7 @@ __pycache__/
 test_db.py
 test_join.py
 scratch/
-data/processed/
+data/processed/*
+!data/processed/college_documents.json
+!data/processed/admission_documents.json
+!data/processed/branch_documents.json

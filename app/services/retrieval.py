@@ -135,14 +135,13 @@ _LOCAL_ADMISSION_DOCUMENTS: Optional[List[Dict[str, Any]]] = None
 
 def _get_local_documents() -> List[Dict[str, Any]]:
     """
-    Loads full local documents for fallback. 
-    ~450 docs * 2KB = ~900KB RAM, perfectly safe for 512MB limits.
-    Truncating previously destroyed RAG context (intakes/fees are at the end of docs).
+    Loads full local documents for fallback.
+    If local JSON is missing (e.g. cloud container without assets), fetches from Supabase.
     """
     global _LOCAL_DOCUMENTS
     if _LOCAL_DOCUMENTS is not None:
         return _LOCAL_DOCUMENTS
-        
+
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     doc_path = os.path.join(base_dir, "data", "processed", "college_documents.json")
     if os.path.exists(doc_path):
@@ -152,7 +151,19 @@ def _get_local_documents() -> List[Dict[str, Any]]:
             logger.info(f"📂 Loaded {len(_LOCAL_DOCUMENTS)} full local college documents for fallback.")
             return _LOCAL_DOCUMENTS
         except Exception as e:
-            logger.warning(f"Could not load local documents: {e}")
+            logger.warning(f"Could not load local documents from disk: {e}")
+
+    # Cloud container fallback: fetch all 418 colleges from Supabase documents table
+    try:
+        logger.info("🌐 Fetching all college documents from Supabase...")
+        res = supabase.table("documents").select("id, content, metadata").eq("metadata->>doc_type", "college_info").execute()
+        if res.data:
+            _LOCAL_DOCUMENTS = res.data
+            logger.info(f"✅ Loaded {len(_LOCAL_DOCUMENTS)} colleges from Supabase.")
+            return _LOCAL_DOCUMENTS
+    except Exception as e:
+        logger.warning(f"Could not load colleges from Supabase: {e}")
+
     _LOCAL_DOCUMENTS = []
     return _LOCAL_DOCUMENTS
 
@@ -161,7 +172,7 @@ def _get_local_admission_documents() -> List[Dict[str, Any]]:
     global _LOCAL_ADMISSION_DOCUMENTS
     if _LOCAL_ADMISSION_DOCUMENTS is not None:
         return _LOCAL_ADMISSION_DOCUMENTS
-        
+
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     doc_path = os.path.join(base_dir, "data", "processed", "admission_documents.json")
     if os.path.exists(doc_path):
@@ -171,7 +182,19 @@ def _get_local_admission_documents() -> List[Dict[str, Any]]:
             logger.info(f"📂 Loaded {len(_LOCAL_ADMISSION_DOCUMENTS)} local admission documents for fallback.")
             return _LOCAL_ADMISSION_DOCUMENTS
         except Exception as e:
-            logger.warning(f"Could not load local admission documents: {e}")
+            logger.warning(f"Could not load local admission documents from disk: {e}")
+
+    # Cloud container fallback: fetch admission documents from Supabase
+    try:
+        logger.info("🌐 Fetching admission documents from Supabase...")
+        res = supabase.table("documents").select("id, content, metadata").eq("metadata->>doc_type", "admission_info").execute()
+        if res.data:
+            _LOCAL_ADMISSION_DOCUMENTS = res.data
+            logger.info(f"✅ Loaded {len(_LOCAL_ADMISSION_DOCUMENTS)} admission documents from Supabase.")
+            return _LOCAL_ADMISSION_DOCUMENTS
+    except Exception as e:
+        logger.warning(f"Could not load admission documents from Supabase: {e}")
+
     _LOCAL_ADMISSION_DOCUMENTS = []
     return _LOCAL_ADMISSION_DOCUMENTS
 

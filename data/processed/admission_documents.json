@@ -1,0 +1,102 @@
+[
+  {
+    "content": "Topic / Section: Allocation of Seats\nSource: TNEA Information Brochure 2026 (Page 4)\nSelection Categories:\n  - OC\n  - BC\n  - BCM\n  - MBC & DNC\n  - SC\n  - SCA\n  - ST\nRule Of Reservation:\n  Oc: 31.00%\n  Bc: 26.50%\n  Bcm: 3.50%\n  Mbc & Dnc: 20.00%\n  Sc: 15.00%\n  Sca: 3.00%\n  St: 1.00%\n  Total: 100%",
+    "metadata": {
+      "doc_type": "admission_info",
+      "section": "Allocation of Seats",
+      "source_document": "TNEA Information Brochure 2026",
+      "source_page": 4,
+      "source": "tnea_admission_info.json"
+    }
+  },
+  {
+    "content": "Topic / Section: Tuition Fee Concession\nSource: TNEA Information Brochure 2026 (Page 11)\nGovernment School 7 5 Percent Reservation:\n  Fee Waiver:\n    - Counselling fee\n    - Tuition fee\n    - Hostel fee\n  Government School Study Required: Sixth Standard to Twelfth Standard\n  Eligible School Categories:\n    - Government Schools\n    - Corporation Schools\n    - Municipal Schools\n    - AdiDravida And Tribal Welfare Schools\n    - Kallar Reclamation Schools\n    - Forest Department Schools\n    - Schools Managed by Government Departments\nFirst Graduate Tuition Fee Concession:\n  Eligible For:\n    - Candidates who are the first graduate in a family\n    - Candidates attending counselling and joining professional courses\n  College Types:\n    - Government Colleges\n    - Aided Colleges\n    - Self-Financing Colleges\nAicte Tuition Fee Waiver:\n  Applicable To:\n    - Self-Financing Engineering Colleges\n    - Self-Supporting courses in Government Aided Engineering Colleges\n  Courses:\n    - B.E.\n    - B.Tech.\n  Maximum Seats: 5% of sanctioned intake per course\n  Parent Annual Income Limit: Less than Rs.8,00,000\n  Other Fees: All other fees except tuition fee must be paid by the candidate\nPost Matric Scholarship:\n  Eligible Categories:\n    - SC\n    - SCA\n    - ST\n    - SC/SCA converted Christians\n  Parent Annual Income Limit: Less than Rs.2,50,000\n  Requirement: Income certificate from appropriate authorities",
+    "metadata": {
+      "doc_type": "admission_info",
+      "section": "Tuition Fee Concession",
+      "source_document": "TNEA Information Brochure 2026",
+      "source_page": 11,
+      "source": "tnea_admission_info.json"
+    }
+  },
+  {
+    "content": "Topic / Section: Procedure for Registration of Application\nSource: TNEA Information Brochure 2026 (Page 12)\nApplication Mode: Online\nAdmission System: TNEA 2026\nApplication Portals:\n  - www.tneaonline.org\n  - www.dte.tn.gov.in\nRegistration Requirements:\n  - Mobile phone number\n  - E-mail ID\n  - 10th Marksheet\n  - +2 Marksheet\n  - School details from 6th to 12th standards\n  - Community/Caste details\n  - Aadhaar card\n  - Parent annual income details\n  - Payment details\nSpecial Reservation Options:\n  - 7.5% reservation for Government School Students\n  - Son/Daughter of Ex-servicemen\n  - Differently abled persons\n  - Eminent sportsperson\nFee Concession Options:\n  - First graduation Fee concession\n  - Post-matric scholarship\nRegistration Fee:\n  Oc/Bc/Bcm/Mbc&Dnc: Rs. 500\n  Sc/Sca/St: Rs. 250",
+    "metadata": {
+      "doc_type": "admission_info",
+      "section": "Procedure for Registration of Application",
+      "source_document": "TNEA Information Brochure 2026",
+      "source_page": 12,
+      "source": "tnea_admission_info.json"
+    }
+  },
+  {
+    "content": "Topic / Section: Uploading Copy of Original Certificates\nSource: TNEA Information Brochure 2026 (Page 13)\nRequired Certificates:\n  - 10th Marksheet\n  - HSC First Year (+1) Marksheet\n  - HSC Second Year (+2) / Equivalent Marksheet\n  - Transfer Certificate\nReservation And Category Certificates:\n  - Government school study details from 6th to 12th standard for 7.5% Government School Students Reservation\n  - Permanent Community Certificate for ST, SC, SCA, MBC&DNC, BC and BCM\nConditional Certificates:\n  - Nativity Certificate\n  - Income Certificate\n  - First Graduate Certificate\n  - First Graduate Joint Declaration\n  - Srilankan Tamil Refugee Certificate\nSpecial Reservation Certificates:\n  Son Or Daughter Of Ex Servicemen:\n    - Parent's Discharge Certificate\n    - Parent's ID Card\n  Differently Abled Persons:\n    - Medical Certificate obtained from Medical Board\n  Eminent Sports Persons:\n    - Sports achievement certificates\n    - Necessary forms",
+    "metadata": {
+      "doc_type": "admission_info",
+      "section": "Uploading Copy of Original Certificates",
+      "source_document": "TNEA Information Brochure 2026",
+      "source_page": 13,
+      "source": "tnea_admission_info.json"
+    }
+  },
+  {
+    "content": "Topic / Section: Online Choice Filling and Confirmation\nSource: TNEA Information Brochure 2026 (Page 13)\nMerit List:\n  Subjects:\n    - Mathematics\n    - Physics\n    - Chemistry\n  Maximum Marks: 200\n  Mark Distribution:\n    Mathematics: 100\n    Physics: 50\n    Chemistry: 50\n  Ranking:\n    - Overall rank\n    - Community rank\nCounselling:\n  Mode: Online\n  Number Of Rounds: Multiple rounds\n  Participation: Candidates participate according to their rank\n  Login Required: True\nOnline Counselling Procedure:\n  Stages:\n    - Choice Filling\n    - Tentative Allotment\n    - Confirmation of Tentative Allotment\n    - Final Allotment\nChoice Filling:\n  Description: Candidates select and arrange their preferred colleges and branches in order of preference.\nAllotment:\n  Tentative Allotment: Candidates are provided a tentative seat allotment based on their choices and rank.\n  Confirmation: Candidates must confirm the tentative allotment according to the prescribed procedure.\n  Final Allotment: Final allotment is published after confirmation.",
+    "metadata": {
+      "doc_type": "admission_info",
+      "section": "Online Choice Filling and Confirmation",
+      "source_document": "TNEA Information Brochure 2026",
+      "source_page": 13,
+      "source": "tnea_admission_info.json"
+    }
+  },
+  {
+    "content": "Topic / Section: Counselling Allotment and Confirmation\nSource: TNEA Information Brochure 2026 (Page 14)\nCounselling Stages:\n  - Choice Filling\n  - Allotment\n  - Confirmation of Allotment\n  - Reporting to College/TFC and payment of fees\nChoice Filling:\n  Duration: Two or three days\n  Description: Candidates fill their preferred colleges and branches in order of preference.\n  Number Of Choices: Any number of choices\nAllotment:\n  Based On:\n    - Candidate rank\n    - Community\n    - Availability of seats\n    - Order of choices\nConfirmation Options:\n  - Accept and Join\n  - Accept and Upward\n  - Decline and Move to Next Round\n  - Decline and Quit\nReporting:\n  Accept And Join: Candidate must report to the allotted college and complete admission by paying the required fees.\n  Accept And Upward: Candidate must report to the nearest TFC, pay the required fees and wait for upward movement.\nImportant Rule: Non-reporting or non-payment of required fees may result in cancellation of the allotment.",
+    "metadata": {
+      "doc_type": "admission_info",
+      "section": "Counselling Allotment and Confirmation",
+      "source_document": "TNEA Information Brochure 2026",
+      "source_page": 14,
+      "source": "tnea_admission_info.json"
+    }
+  },
+  {
+    "content": "Topic / Section: Special Reservation Categories\nSource: TNEA Information Brochure 2026 (Page 15)\nEligibility: Only Tamil Nadu Native candidates are eligible for Special Reservation\nCategories:\n  Son Or Daughter Of Ex Servicemen:\n    Seat Quota: 1 seat\n    Applicable Colleges: Stand-alone Self-Financing Colleges\n  Persons With Benchmark Disabilities:\n    Seat Quota: 5% of seats\n  Eminent Sports Persons:\n    Seat Quota: 6 seats\n    Seat Distribution:\n      University Department: 1 seat\n      Stand Alone Self Financing College: 5 seats\nImportant Conditions:\n  - Candidates must produce appropriate certificates and supporting documents.\n  - If required certificates and documents are not produced, the special reservation claim will not be considered.\n  - Candidates under special reservation must also satisfy the general eligibility rules.\n  - Candidates under special reservation are also eligible for admission under general counselling.\nCertificate Requirements:\n  Ex Servicemen:\n    - Certificate from the Department of Ex-servicemen's Welfare of Tamil Nadu\n    - Parent's Discharge Certificate\n    - Parent's Ex-Servicemen ID Card\n  Persons With Benchmark Disabilities:\n    - Medical Certificate from the District Medical Board\n    - Medical Board must consist of at least 3 doctors\n  Eminent Sports Persons:\n    - Original sports achievement certificates\n    - Required forms specified in the brochure",
+    "metadata": {
+      "doc_type": "admission_info",
+      "section": "Special Reservation Categories",
+      "source_document": "TNEA Information Brochure 2026",
+      "source_page": 15,
+      "source": "tnea_admission_info.json"
+    }
+  },
+  {
+    "content": "Topic / Section: Course Specific Requirements\nSource: TNEA Information Brochure 2026 (Page 3)\nCourse: Marine Engineering\nAcademic Requirements:\n  Qualification: 10+2 or equivalent\n  Subjects:\n    - Physics\n    - Chemistry\n    - Mathematics\n    - English\n  Minimum Average In Pcm: 60%\n  Minimum English Marks: 50%\nEntrance Exam: IMU CET\nAge Limit: Maximum 25 years\nPhysical Requirements:\n  Minimum Height: 157 cm\n  Minimum Weight: 48 kg\n  Colour Vision: Normal colour vision required\nMedical Requirement: Physical fitness certificate as prescribed",
+    "metadata": {
+      "doc_type": "admission_info",
+      "section": "Course Specific Requirements",
+      "source_document": "TNEA Information Brochure 2026",
+      "source_page": 3,
+      "source": "tnea_admission_info.json"
+    }
+  },
+  {
+    "content": "Topic / Section: Course Specific Requirements\nSource: TNEA Information Brochure 2026 (Page 3)\nCourse: Mining Engineering\nFemale Candidates:\n  Requirements:\n    - As per Mines Act 1952, women cannot be employed in any part of a mine below ground.\n    - In mines above ground, women cannot be employed except between 6 A.M. and 7 P.M.\n    - As per Coal Mines Regulation 1957, women cannot descend or ascend a shaft in a cage or other means of conveyance unless accompanied by one or more adult males.\n    - Candidates must satisfy the academic norms of Anna University.",
+    "metadata": {
+      "doc_type": "admission_info",
+      "section": "Course Specific Requirements",
+      "source_document": "TNEA Information Brochure 2026",
+      "source_page": 3,
+      "source": "tnea_admission_info.json"
+    }
+  },
+  {
+    "content": "Topic / Section: General Eligibility Rules\nSource: TNEA Information Brochure 2026 (Page 2)\nEligibility Condition: Candidates must satisfy the eligibility conditions as on the last date of submission of the online application.\nNativity:\n  Tamil Nadu Candidates:\n    - Candidates who have passed VIII, IX, X, XI and XII standard from schools situated in Tamil Nadu are eligible.\n    - They need not produce a Nativity Certificate for verification.\n  Tamil Nadu Native Outside Tamil Nadu Schooling:\n    - Tamil Nadu native candidates who have passed any of VIII, IX, X, XI or XII standard from schools outside Tamil Nadu are eligible.\n    - They must produce a digitally signed electronic Nativity Certificate.\n  Central Government Employees Children:\n    Eligibility: Children of Central Government Employees can apply irrespective of native place.\n    Condition: Parent or guardian must have been serving continuously in Tamil Nadu for the past 5 years at the time of application.\n    Proof: Certificate from the employer of the parent or guardian.\n  Public Sector Or Government Recognised Institution Employees Children:\n    Eligibility: Children of employees working in Tamil Nadu can apply irrespective of domicile.\n    Condition: Parent must have been employed continuously in Tamil Nadu for the past 5 years.\n    Proof:\n      - Employer certificate confirming permanent employment\n      - Income Tax return\n      - PF slips or other supporting evidence\n  All India Service Tamil Nadu Cadre Officers Children:\n    Eligibility: Sons and daughters of All India Service officers belonging to Tamil Nadu cadre are eligible.\n    Proof: Self-declaration from the parent.\n  Other State Candidates:\n    Eligibility: Other State candidates who have studied VIII, IX, X, XI and XII standard in Tamil Nadu are eligible.\n    Nativity Certificate: Not required",
+    "metadata": {
+      "doc_type": "admission_info",
+      "section": "General Eligibility Rules",
+      "source_document": "TNEA Information Brochure 2026",
+      "source_page": 2,
+      "source": "tnea_admission_info.json"
+    }
+  }
+]
