@@ -88,7 +88,27 @@ BRANCH_SYNONYMS = {
     "chemical": "CH", "chemical engineering": "CH", "ch": "CH",
     "automobile": "AU", "automobile engineering": "AU", "au": "AU",
     "aeronautical": "AE", "aeronautical engineering": "AE", "ae": "AE",
-    "textile": "TX", "textile technology": "TX", "fashion": "FT", "fashion technology": "FT"
+    "textile": "TX", "textile technology": "TX", "fashion": "FT", "fashion technology": "FT",
+    "marine": "MR", "marine engineering": "MR", "marine engg": "MR", "marine engineering courses": "MR", "marine course": "MR", "mr": "MR",
+    "aerospace": "AO", "aerospace engineering": "AO", "ao": "AO",
+    "robotics": "RM", "robotics and automation": "RM", "robotics engineering": "RM", "rm": "RM",
+    "petroleum": "PE", "petroleum engineering": "PE", "pe": "PE",
+    "pharmaceutical": "PH", "pharmaceutical technology": "PH", "ph": "PH",
+    "food technology": "FD", "food tech": "FD", "fd": "FD",
+    "mining": "MI", "mining engineering": "MI", "mi": "MI",
+    "industrial": "IE", "industrial engineering": "IE", "ie": "IE",
+    "manufacturing": "MN", "manufacturing engineering": "MN", "mn": "MN",
+    "environmental": "EN", "environmental engineering": "EN", "en": "EN",
+    "metallurgical": "MT", "metallurgical engineering": "MT", "mt": "MT",
+    "safety and fire": "SF", "safety engineering": "SF", "safety and fire engineering": "SF", "sf": "SF",
+    "ceramic": "CR", "ceramic technology": "CR", "cr": "CR",
+    "leather": "LE", "leather technology": "LE", "le": "LE",
+    "printing": "PT", "printing technology": "PT", "pt": "PT",
+    "architecture": "AR", "ar": "AR",
+    "apparel": "AP", "apparel technology": "AP", "ap": "AP",
+    "medical electronics": "MD", "medical electronics engineering": "MD", "md": "MD",
+    "instrumentation and control": "IC", "ice": "IC", "ic": "IC",
+    "electronics and instrumentation": "EI", "eie": "EI", "ei": "EI"
 }
 
 DISTRICT_SYNONYMS = {
@@ -274,6 +294,24 @@ def extract_district(query: str, filters: dict = None) -> Optional[str]:
             return d_norm
     return None
 
+_BRANCH_SYNONYMS_ENRICHED = False
+
+def _enrich_branch_synonyms():
+    global _BRANCH_SYNONYMS_ENRICHED, BRANCH_SYNONYMS
+    if _BRANCH_SYNONYMS_ENRICHED:
+        return
+    local_docs = _get_local_documents()
+    for d in local_docs:
+        meta = d.get("metadata", {})
+        codes = meta.get("department_codes", meta.get("branch_codes", []))
+        names = meta.get("department_names", [])
+        for c, n in zip(codes, names):
+            if c and n:
+                clean_n = n.lower().split("(ss)")[0].split("(tamil")[0].strip()
+                if clean_n and clean_n not in BRANCH_SYNONYMS and len(clean_n) > 3:
+                    BRANCH_SYNONYMS[clean_n] = c
+    _BRANCH_SYNONYMS_ENRICHED = True
+
 def extract_branch_code(query: str, filters: dict = None) -> Optional[str]:
     if filters and filters.get("branch_code"):
         code = str(filters["branch_code"]).strip().upper()
@@ -284,6 +322,7 @@ def extract_branch_code(query: str, filters: dict = None) -> Optional[str]:
         if code:
             return code
 
+    _enrich_branch_synonyms()
     query_lower = query.lower()
     sorted_synonyms = sorted(BRANCH_SYNONYMS.items(), key=lambda x: len(x[0]), reverse=True)
     for synonym, code in sorted_synonyms:
@@ -551,27 +590,9 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
             # Explicit college queried but does not exist in TNEA database (e.g. Sudhakar College of Engineering)
             return None, f"The college '{detected_college}' does not exist in the official TNEA database. Please verify the college name or check if it participates in TNEA counselling."
 
-    # Also check if the raw query was asking for a specific college
-    if not detected_college and any(w in query_lower for w in ["college", "institute", "campus"]):
-        clean_q = re.sub(r"[^\w\s]", " ", query_lower)
-        stop = {"engineering", "college", "colleges", "clg", "clgs", "technology", "institute", "of", "and", "in", "with", "the", "for", "at"}
-        college_keywords = [w for w in clean_q.split() if w not in stop and len(w) > 2]
-        if college_keywords and not district:
-            local_docs = _get_local_documents()
-            matched = []
-            for d in local_docs:
-                c_name = d.get("metadata", {}).get("college_name", "").lower()
-                if all(kw in c_name for kw in college_keywords if len(kw) > 3):
-                    matched.append(d)
-            if matched:
-                return matched[:top_k], format_context_xml(matched[:top_k])
-            else:
-                # College name queried does not exist in TNEA database!
-                return None, f"The college '{query.strip()}' does not exist in the official TNEA database. Please verify the college name or check if it participates in TNEA counselling."
-
-    # 3. DIRECT CATALOG FILTERING
+    # 3. DIRECT CATALOG FILTERING (Runs BEFORE specific college fallback to avoid false refusals)
     is_hostel_query = "hostel" in query_lower or "mess" in query_lower or "room rent" in query_lower
-    is_college_list_query = bool(district) and (
+    is_college_list_query = (bool(district) or bool(branch_code) or is_autonomous or is_hostel_query) and (
         "colleges" in query_lower or 
         "college" in query_lower or 
         "clgs" in query_lower or 
@@ -582,11 +603,14 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
         "what college" in query_lower or 
         "offer" in query_lower or 
         "list" in query_lower or 
+        "have" in query_lower or
+        "has" in query_lower or
+        bool(branch_code) or
         is_autonomous or
         is_hostel_query
     )
 
-    if is_college_list_query:
+    if is_college_list_query or bool(branch_code):
         catalog_docs = get_colleges_by_filters(
             district=district,
             branch_code=branch_code,
@@ -599,6 +623,33 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
             for c in catalog_docs:
                 c["rerank_score"] = 9.0
             return catalog_docs, format_context_xml(catalog_docs)
+
+    # 4. Also check if the raw query was asking for a specific named college
+    is_search_or_list_intent = any(
+        re.search(rf"\b{re.escape(w)}\b", query_lower)
+        for w in [
+            "what", "which", "how", "list", "top", "best", "colleges", "clgs",
+            "have", "has", "offer", "offers", "offering", "available",
+            "courses", "course", "branch", "branches", "department", "departments",
+            "any", "show", "find", "where"
+        ]
+    )
+    if not detected_college and not branch_code and not district and not is_search_or_list_intent and any(w in query_lower for w in ["college", "institute", "campus"]):
+        clean_q = re.sub(r"[^\w\s]", " ", query_lower)
+        stop = {"engineering", "college", "colleges", "clg", "clgs", "technology", "institute", "of", "and", "in", "with", "the", "for", "at"}
+        college_keywords = [w for w in clean_q.split() if w not in stop and len(w) > 2]
+        if college_keywords:
+            local_docs = _get_local_documents()
+            matched = []
+            for d in local_docs:
+                c_name = d.get("metadata", {}).get("college_name", "").lower()
+                if all(kw in c_name for kw in college_keywords if len(kw) > 3):
+                    matched.append(d)
+            if matched:
+                return matched[:top_k], format_context_xml(matched[:top_k])
+            else:
+                # Specific named college queried does not exist in TNEA database!
+                return None, f"The college '{query.strip()}' does not exist in the official TNEA database. Please verify the college name or check if it participates in TNEA counselling."
 
     # 4. FALLBACK FUZZY ENTITY RESOLUTION
     if not compare_colleges:
