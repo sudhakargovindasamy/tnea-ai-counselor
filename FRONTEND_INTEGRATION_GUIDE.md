@@ -81,7 +81,7 @@ Use this if you don't need token-by-token streaming — e.g. a simple chat widge
 | `session_id` | ✅ | string, from step 0 |
 | `question` | ✅ | string |
 | `top_k` | ❌ | int, 1–20, default 5. **Sending 0, negative, or >20 returns HTTP 422** |
-| `filters` | ❌ | object, e.g. `{"district": "COIMBATORE"}` — backend normalizes casing |
+| `filters` | ❌ | object, e.g. `{"district": "COIMBATORE", "department_code": "CS"}` (both `department_code` and `branch_code` are supported; backend normalizes casing) |
 
 **Success response (200):**
 ```json

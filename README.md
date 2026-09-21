@@ -12,7 +12,7 @@ pinned: false
 
 > A **production-grade AI Engineering College Counselor** for Tamil Nadu students, powered by **RAG (Retrieval-Augmented Generation)** with Hybrid Search, SSE Streaming, Conversational Memory, and Enterprise Guardrails.
 
-Built to handle **418 Colleges**, **3,518 Branches**, and **Official TNEA Admission Rules** with zero hallucinations. Battle-tested against a **42-case edge-case regression suite** with **0 server failures**.
+Built to handle **418 Colleges**, **3,516 Departments/Branches**, and **Official TNEA Admission Rules** with zero hallucinations. Battle-tested against an automated regression suite with **0 server failures**.
 
 ![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-2.0--production-green?logo=fastapi)
@@ -105,11 +105,13 @@ tnea-ai-counselor/
 │       ├── semantic_cache.py      # pgvector semantic caching + guardrails
 │       ├── observability.py       # RAGTracer: structured tracing + optional Langfuse export
 │       └── database.py            # Supabase client initialization
-├── data/raw/                      # Source datasets: colleges, branches, performance CSVs + admission info JSON
+├── data/
+│   ├── raw/                       # Source datasets: colleges_db_df.csv, college_branches_rows.csv (3,516 rows), performance_db_df.csv, tnea_admission_info.json
+│   └── processed/                 # Processed rich documents: college_documents, branch_documents, admission_documents
 ├── scripts/
-│   ├── 01_setup_supabase.sql      # Database schema + pgvector RPC functions
+│   ├── 01_setup_supabase.sql      # Database schema + pgvector RPC functions (updated with department columns)
 │   ├── 02_ingest_colleges.py      # (legacy) college ingestion using bge-large-en-v1.5
-│   ├── 03_ingest_branches.py      # Branch data ingestion
+│   ├── 03_ingest_branches.py      # Ingests college_branches_rows.csv into relational branches table
 │   ├── 04_ingest_performance.py   # (legacy) performance data ingestion using bge-large-en-v1.5
 │   ├── 05_ingest_admission_info.py# (legacy) admission rules ingestion using bge-large-en-v1.5
 │   ├── 06_verify_supabase_data.py # Data health & integrity checker
@@ -117,11 +119,13 @@ tnea-ai-counselor/
 │   ├── 08_master_ingest.py        # Current production ingestion pipeline (all-MiniLM-L6-v2, 384-dim)
 │   ├── 09_reingest_minilm.py      # Resume-safe re-ingestion with retry/backoff
 │   ├── 09_enrich_and_reingest.py  # Metadata enrichment + re-ingestion pass
-│   ├── 11_edge_case_tests.py      # 42-case automated regression suite
+│   ├── 10_migrate_branches_schema.sql # Migration script for department_code, department_name, approval_marker
+│   ├── 11_edge_case_tests.py      # Automated regression suite
 │   ├── evaluate_rag.py            # RAG quality evaluation harness
-│   └── preprocess_data.py         # Raw data cleaning/normalization
+│   └── preprocess_data.py         # Ingests college_branches_rows.csv & generates denormalized RAG documents
 ├── tests/
 │   ├── test_api.py                # API endpoint tests
+│   ├── test_branch_dataset.py     # Unit tests for new branch dataset, schema & retrieval
 │   └── test_rag.py                # RAG pipeline unit tests
 ├── src/rag_final/                 # Packaging entry point (uv build target)
 ├── .env.example                   # Required environment variables
@@ -129,6 +133,7 @@ tnea-ai-counselor/
 ├── pyproject.toml / uv.lock        # uv-managed dependency set for local development
 ├── Dockerfile                      # Container configuration (port 7860)
 ├── API_DOCS.md                     # Frontend-facing API reference
+├── FRONTEND_INTEGRATION_GUIDE.md   # Detailed frontend integration & SSE guide
 └── README.md                       # This file
 ```
 
@@ -182,13 +187,19 @@ LANGFUSE_HOST=https://cloud.langfuse.com
 
 ### 4. Ingest Data to Supabase
 ```bash
-# Set up the schema and pgvector RPC functions first
-psql -f scripts/01_setup_supabase.sql   # or run via the Supabase SQL editor
+# 1. Set up or migrate the schema (includes new department columns)
+psql -f scripts/01_setup_supabase.sql   # or run scripts/10_migrate_branches_schema.sql in Supabase SQL editor
 
-# Upload colleges, branches, and admission rule sets (384-dim vectors)
+# 2. Preprocess raw CSVs into rich denormalized RAG documents
+python scripts/preprocess_data.py
+
+# 3. Upload relational branch records (3,516 records from college_branches_rows.csv)
+python scripts/03_ingest_branches.py
+
+# 4. Upload colleges and admission rule sets (384-dim vectors)
 python scripts/08_master_ingest.py
 
-# Verify data integrity
+# 5. Verify data integrity
 python scripts/06_verify_supabase_data.py
 ```
 

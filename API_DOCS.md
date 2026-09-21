@@ -14,7 +14,7 @@
   "session_id": "user_12345",       // REQUIRED: Unique ID per user (use UUID)
   "question": "Tell me about PSG College of Technology",  // REQUIRED
   "top_k": 5,                       // OPTIONAL: Number of sources (default: 5)
-  "filters": {}                     // OPTIONAL: e.g. {"district": "CHENNAI"}
+  "filters": {}                     // OPTIONAL: e.g. {"district": "CHENNAI", "department_code": "CS", "autonomous": true}
 }
 
 ### Success Response (200 OK):
