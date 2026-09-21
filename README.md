@@ -27,8 +27,8 @@ Built to handle **418 Colleges**, **3,516 Departments/Branches**, and **Official
 - 🎯 **Smart Intent Routing** — Routes queries to College, Branch, or Admission data silos using strict Regex word boundaries (prevents "ec" matching "technology")
 - 🔗 **Hybrid Search with SQL Joins** — Combines pgvector Vector Search + Relational SQL joins to enrich branch records with college names and districts
 - 🌊 **SSE Token Streaming** — The `/chat` endpoint streams the answer token-by-token over Server-Sent Events, followed by a citation-card payload
-- 🔄 **Conversational Memory** — Multi-turn chat with history-aware query rewriting (resolves pronouns like "there", "it", "that college")
-- 🔍 **Fuzzy Entity Matching** — Handles typos ("Colege"), abbreviations (SSN, PSG, CIT, CEG), and missing spaces via in-memory `difflib` resolution
+- 🔍 **Universal Multi-Stage Entity Resolver** — Automatically parses and resolves all 418+ TNEA institutions without manual aliases. Handles compound words (`sairam` ↔ `sai ram`), missing prefixes (`Sri`, `Dr.`), spelling quirks (`Enginering`), multi-campus district disambiguation (e.g. *Velammal in Madurai* vs *Velammal in Chennai*), and fuzzy brand matching ($\ge 0.80$)
+- 🛡️ **Zero False Refusals** — Guaranteed routing that prevents course/branch questions (e.g. Marine Engineering, Aerospace, Robotics), category questions, or conversational inquiries from ever being falsely rejected as nonexistent colleges
 - ⚡ **Semantic Caching** — Instant responses for repeated questions (0 LLM calls), with admin purge + user downvote self-healing
 - 🛡️ **Anti-Hallucination Guardrails** — Confidence gates (Rerank logit + Vector similarity thresholds) block low-confidence generations before the LLM is called
 - 🤖 **Universal Retry Wrapper** — Exponential backoff across a Gemini fallback chain survives 429 rate limits without crashing (0 HTTP 500s)
