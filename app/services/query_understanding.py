@@ -11,10 +11,10 @@ logger = logging.getLogger(__name__)
 
 # 🚀 Production Fallback Chain (Updated for current API availability)
 FALLBACK_MODELS = [
+    "gemini-3.5-flash",
+    "gemini-3.6-flash",
     "gemini-3.5-flash-lite",
-    "gemini-3.1-flash-lite",
-    "gemini-flash-lite-latest",
-    "gemini-3-flash-preview"
+    "gemini-flash-latest"
 ]
 
 # ==========================================

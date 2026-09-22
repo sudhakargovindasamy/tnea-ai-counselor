@@ -11,10 +11,10 @@ logger = logging.getLogger(__name__)
 
 # 🚀 Production Fallback Chain (Updated for current API availability)
 FALLBACK_MODELS = [
+    "gemini-3.5-flash",
+    "gemini-3.6-flash",
     "gemini-3.5-flash-lite",
-    "gemini-3.1-flash-lite",
-    "gemini-flash-lite-latest",
-    "gemini-3-flash-preview"
+    "gemini-flash-latest"
 ]
 
 SYSTEM_PROMPT = """You are an expert AI counselor for Tamil Nadu Engineering Colleges (TNEA).
@@ -61,8 +61,12 @@ The official TNEA database tracks Autonomous status and NBA branch-level accredi
 
 9. COMPREHENSIVE COLLEGE LISTINGS RULE:
 - When a student asks to "list the colleges", "which colleges offer...", or for all colleges offering a course/branch without asking for a specific number (like "top 3"):
-  * If the context contains a <college_catalog>, begin by stating the authoritative total count of colleges offering that course (e.g., "According to the official TNEA database, there are 408 colleges offering Computer Science and Engineering (CSE)...").
-  * Present the colleges clearly (with TNEA Code, Name, District, and Seats/Intake if available).
+  * If the context contains a <college_catalog>:
+    1. State the authoritative total count of colleges offering that course (e.g., "According to the official TNEA database, there are 408 colleges offering Computer Science and Engineering (CSE)...").
+    2. Highlight and list the prominent / premier colleges (top 10 to 15) with their TNEA Code, Name, District, and Seats.
+    3. Always include the official PDF download link provided in <pdf_download_url>:
+       "📥 **[Download Complete Official Directory of All {total_colleges} Colleges (PDF)]({pdf_download_url})**"
+       so the student can download and save the entire statewide directory without chat window truncation.
 - If the student explicitly specifies a number (e.g. "top 3", "top 5", "give me 5"), provide ONLY that requested number of colleges.
 
 INSTRUCTION: If the context shows a college has branch code "AD" or lists Artificial Intelligence and Data Science, and the student asks if it offers "AI & DS" or "Artificial Intelligence", you MUST answer YES and specify the approved intake. Treat branch codes and full names as identical.

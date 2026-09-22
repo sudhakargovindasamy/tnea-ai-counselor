@@ -12,7 +12,7 @@ from datetime import datetime
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 
 # Rate Limiter
 from slowapi import Limiter, _rate_limit_exceeded_handler
@@ -218,6 +218,54 @@ def search_colleges(
         "count": len(docs),
         "results": [d.get("metadata") for d in docs]
     }
+
+@app.get("/export/colleges.pdf")
+def export_colleges_pdf(
+    branch_code: str | None = None,
+    district: str | None = None,
+    autonomous: bool | None = None
+):
+    """
+    Downloads a complete, beautifully styled official PDF directory of colleges.
+    Supports filtering by branch_code (e.g. CS, EC, ME, MR) and district (e.g. Chennai, Coimbatore).
+    """
+    from app.services.retrieval import get_colleges_by_filters, CANONICAL_BRANCH_NAMES, compute_course_aggregation
+    from app.services.pdf_generator import generate_colleges_pdf
+
+    b_code = branch_code.strip().upper() if branch_code else None
+    dist = district.strip().title() if district else None
+    
+    colleges = get_colleges_by_filters(district=dist, branch_code=b_code, autonomous=autonomous, limit=None)
+    if not colleges:
+        raise HTTPException(status_code=404, detail="No colleges found matching the requested criteria.")
+
+    total_seats = None
+    branch_name = None
+    if b_code:
+        branch_name = CANONICAL_BRANCH_NAMES.get(b_code, f"{b_code} Engineering")
+        agg = compute_course_aggregation(branch_code=b_code, district=dist)
+        total_seats = agg.get("total_seats")
+
+    pdf_bytes = generate_colleges_pdf(
+        colleges=colleges,
+        branch_code=b_code,
+        branch_name=branch_name,
+        district=dist,
+        total_seats=total_seats
+    )
+
+    clean_branch = b_code or "Engineering"
+    clean_dist = f"_{dist}" if dist else ""
+    filename = f"TNEA_2026_{clean_branch}_Colleges{clean_dist}.pdf"
+
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "public, max-age=3600"
+        }
+    )
 
 def extract_source_info(doc: dict) -> Source:
     meta = doc.get("metadata", {})

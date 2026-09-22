@@ -608,10 +608,21 @@ def format_aggregation_xml(agg: Dict[str, Any], top_n_preview: int = 10) -> str:
 def format_catalog_list_xml(docs: List[Dict], branch_code: str = None, district: str = None) -> str:
     b_name = CANONICAL_BRANCH_NAMES.get(branch_code, branch_code) if branch_code else "Engineering"
     dist_str = f' district="{district}"' if district else ""
+    
+    # Generate direct download link for PDF export
+    export_params = f"?branch_code={branch_code}" if branch_code else ""
+    if district:
+        export_params += f"&district={district}" if export_params else f"?district={district}"
+    pdf_url = f"/export/colleges.pdf{export_params}"
+
     xml = f'<college_catalog total_colleges="{len(docs)}" branch_code="{branch_code or ""}" branch_name="{b_name}"{dist_str}>\n'
-    xml += f'  <summary_instruction>CRITICAL: There are {len(docs)} colleges offering this course in the official TNEA database. State the total count ({len(docs)} colleges), then present the full list of colleges as requested.</summary_instruction>\n'
+    xml += f'  <pdf_download_url>{pdf_url}</pdf_download_url>\n'
+    xml += f'  <summary_instruction>CRITICAL: There are {len(docs)} colleges offering {b_name}. '
+    xml += f'1. State the total count ({len(docs)} colleges). '
+    xml += '2. Highlight and list the top 10 to 15 premier colleges with their TNEA Code, Name, District, and Seats. '
+    xml += f'3. Provide the official PDF download markdown link: `📥 **[Download Complete {len(docs)} Colleges Directory (PDF)]({pdf_url})**` so the student can easily access, print, and save the full {len(docs)}-college directory without truncation.</summary_instruction>\n'
     xml += '  <colleges>\n'
-    for i, d in enumerate(docs):
+    for i, d in enumerate(docs[:30]):
         meta = d.get("metadata", {})
         code = meta.get("tnea_code", "N/A")
         name = meta.get("college_name", "").split(",")[0].strip()
