@@ -140,6 +140,12 @@ def save_to_cache(question: str, answer: str, sources: list, overwrite: bool = F
         logger.info(f"🛡️ Cache Poison Guard: Skipped caching refusal/error response for: '{question[:40]}'")
         return
 
+    # Truncation Guard: Do not cache responses cut off mid-sentence or mid-token
+    stripped_ans = answer.strip()
+    if stripped_ans.endswith("TNEA Code:") or stripped_ans.endswith("Code:") or stripped_ans.endswith("..."):
+        logger.info(f"🛡️ Cache Poison Guard: Skipped caching truncated response for: '{question[:40]}'")
+        return
+
     clean_sources = []
     for s in sources:
         if hasattr(s, "dict"): clean_sources.append(s.dict())
@@ -184,6 +190,8 @@ def purge_all_cache():
     """Wipe both L1 and L2 caches."""
     _L1_CACHE.clear()
     try:
-        supabase.table("query_cache").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
+        # id is a bigint primary key
+        supabase.table("query_cache").delete().gt("id", 0).execute()
+        logger.info("🗑️ Supabase query_cache successfully cleared.")
     except Exception as e:
         logger.warning(f"Error clearing L2 cache: {e}")
