@@ -589,21 +589,45 @@ def compute_course_aggregation(branch_code: str, district: Optional[str] = None)
         "colleges": matching_colleges
     }
 
-def format_aggregation_xml(agg: Dict[str, Any], top_n_preview: int = 10) -> str:
-    district_str = f' district="{agg["district"]}"' if agg.get("district") else ""
-    xml = f'<aggregation_data type="course_seats_summary" branch_code="{agg["branch_code"]}" branch_name="{agg["branch_name"]}"{district_str}>\n'
-    xml += f'  <total_colleges_offering_course>{agg["total_colleges"]}</total_colleges_offering_course>\n'
-    xml += f'  <total_approved_seats>{agg["total_seats"]}</total_approved_seats>\n'
-    xml += '  <summary_instruction>CRITICAL: Use the EXACT total numbers above for answering. Total colleges: '
-    xml += f'{agg["total_colleges"]}, Total approved seats: {agg["total_seats"]}. DO NOT recalculate, guess, or sum partial lists.</summary_instruction>\n'
+def format_aggregation_response(agg: Dict[str, Any]) -> str:
+    b_name = agg["branch_name"]
+    code = agg["branch_code"]
+    total_colleges = agg["total_colleges"]
+    total_seats = agg["total_seats"]
+    district = agg.get("district")
     
-    xml += '  <top_performing_colleges>\n'
-    for c in agg["colleges"][:top_n_preview]:
-        xml += (f'    <college tnea_code="{c["tnea_code"]}" name="{c["college_name"]}" '
-                f'district="{c["district"]}" seats="{c["intake"]}" autonomous="{c["autonomous"]}"/>\n')
-    xml += '  </top_performing_colleges>\n'
-    xml += '</aggregation_data>\n'
-    return xml
+    dist_part = f" in **{district.title()} District**" if district else " across Tamil Nadu"
+    
+    lines = [
+        f"According to the official TNEA database, there are a total of **{total_seats:,} approved seats** across **{total_colleges} colleges** offering **{b_name} ({code})**{dist_part}.\n",
+        "**Key Summary:**",
+        f"- **Program / Course:** {b_name} ({code})",
+        f"- **Total Participating Institutions:** {total_colleges} Colleges",
+        f"- **Total Approved Intake:** {total_seats:,} Seats\n"
+    ]
+    
+    if agg.get("district_breakdown") and not district:
+        top_districts = sorted(agg["district_breakdown"].items(), key=lambda x: x[1], reverse=True)[:5]
+        if top_districts:
+            lines.append("**Top Districts by Number of Institutions:**")
+            for d_name, d_count in top_districts:
+                lines.append(f"- **{d_name}:** {d_count} colleges")
+            lines.append("")
+
+    if agg.get("colleges"):
+        lines.append("**Top Premier Institutions with Approved Intake:**")
+        for i, c in enumerate(agg["colleges"][:5]):
+            raw_c_name = c["college_name"]
+            parts = [p.strip() for p in raw_c_name.split(",") if p.strip()]
+            if "University Departments of Anna University" in parts[0] and len(parts) > 1:
+                disp_name = f"{parts[0]} - {parts[1]}"
+            else:
+                disp_name = parts[0]
+            clean_name = re.sub(r"\s*\(Autonomous\)", "", disp_name, flags=re.IGNORECASE).strip()
+            auto_str = "Autonomous" if c.get("autonomous") else "Affiliated"
+            lines.append(f"{i+1}. **{clean_name}** (TNEA Code: {c['tnea_code']}) — {c['district']} • {auto_str} • **{c['intake']} Seats**")
+            
+    return "\n".join(lines)
 
 def format_complete_college_list_response(docs: List[Dict], branch_code: str = None, district: str = None) -> str:
     b_name = CANONICAL_BRANCH_NAMES.get(branch_code, branch_code) if branch_code else "Engineering"
@@ -868,12 +892,12 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
 
     if is_aggregation_query and branch_code:
         agg = compute_course_aggregation(branch_code=branch_code, district=district)
-        agg_xml = format_aggregation_xml(agg, top_n_preview=10)
+        agg_text = format_aggregation_response(agg)
         preview_docs = [c["doc"] for c in agg["colleges"][:10]]
         for d in preview_docs:
             d["rerank_score"] = 10.0
         logger.info(f"📊 Aggregation handled: {agg['branch_name']} -> {agg['total_colleges']} colleges, {agg['total_seats']} seats")
-        return preview_docs, agg_xml
+        return preview_docs, agg_text
 
     # Check for Explicit Top-K request (e.g. "top 3 colleges", "top 5", "best 3", "give me 3 colleges")
     explicit_k = active_filters.get("explicit_top_k")

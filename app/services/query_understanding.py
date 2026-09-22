@@ -118,6 +118,42 @@ def _generate_with_fallback(client, model_list: list, contents: str, config, sch
 # 🧠 MAIN FUNCTIONS
 # ==========================================
 def understand_query(question: str) -> dict:
+    q_low = question.lower()
+    
+    # ⚡ Instant Fast-Path for Aggregations & Seat Sum Queries (< 1ms)
+    is_agg_query = bool(re.search(r'\b(sum|total\s+(?:number\s+of\s+)?seats|total\s+intake|how\s+many\s+seats|sum\s+of\s+seats|count\s+(?:of\s+)?colleges|how\s+many\s+colleges)\b', q_low))
+    if is_agg_query:
+        from app.services.retrieval import extract_branch_code, extract_district
+        b_code = extract_branch_code(question, {})
+        dist = extract_district(question, {})
+        logger.info(f"⚡ [Fast-Path Aggregation] Bypassed LLM query understanding for '{question[:50]}'")
+        return {
+            "intent": "numerical",
+            "is_aggregation": True,
+            "branch_code": b_code,
+            "department_code": b_code,
+            "district": dist,
+            "numerical_metric": "total_intake"
+        }
+
+    # ⚡ Instant Fast-Path for Direct Listing Queries (< 1ms)
+    is_list_query = bool(re.search(r'\b(list\s+(?:the\s+|out\s+the\s+|all\s+)?colleges|which\s+colleges|what\s+are\s+the\s+colleges|what\s+colleges)\b', q_low))
+    if is_list_query and not ("compare" in q_low or " vs " in q_low):
+        from app.services.retrieval import extract_branch_code, extract_district
+        b_code = extract_branch_code(question, {})
+        if b_code:
+            dist = extract_district(question, {})
+            top_m = re.search(r'\b(?:top|best|first)\s+(\d+)\b', q_low) or re.search(r'\b(\d+)\s+(?:colleges?|clgs?)\b', q_low) or re.search(r'\bgive\s+me\s+(\d+)\b', q_low)
+            explicit_k = int(top_m.group(1)) if top_m else None
+            logger.info(f"⚡ [Fast-Path Listing] Bypassed LLM query understanding for '{question[:50]}'")
+            return {
+                "intent": "list",
+                "branch_code": b_code,
+                "department_code": b_code,
+                "district": dist,
+                "explicit_top_k": explicit_k
+            }
+
     from google.genai import types
     
     client = get_genai_client()
