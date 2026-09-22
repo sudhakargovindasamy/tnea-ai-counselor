@@ -609,11 +609,13 @@ def format_catalog_list_xml(docs: List[Dict], branch_code: str = None, district:
     b_name = CANONICAL_BRANCH_NAMES.get(branch_code, branch_code) if branch_code else "Engineering"
     dist_str = f' district="{district}"' if district else ""
     
-    # Generate direct download link for PDF export
+    # Generate direct download link for PDF export with absolute backend URL
     export_params = f"?branch_code={branch_code}" if branch_code else ""
     if district:
         export_params += f"&district={district}" if export_params else f"?district={district}"
-    pdf_url = f"/export/colleges.pdf{export_params}"
+    
+    base_api = os.getenv("PUBLIC_API_URL", os.getenv("API_BASE_URL", "https://tnea-ai-eng.onrender.com")).rstrip("/")
+    pdf_url = f"{base_api}/export/colleges.pdf{export_params}"
 
     xml = f'<college_catalog total_colleges="{len(docs)}" branch_code="{branch_code or ""}" branch_name="{b_name}"{dist_str}>\n'
     xml += f'  <pdf_download_url>{pdf_url}</pdf_download_url>\n'
