@@ -1,4 +1,5 @@
 import io
+import html
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 from reportlab.lib.pagesizes import A4
@@ -147,15 +148,28 @@ def generate_colleges_pdf(
         else:
             meta = item
 
-        code = str(meta.get("tnea_code") or meta.get("code") or "N/A")
-        raw_name = str(meta.get("college_name") or meta.get("name") or "Unknown College")
-        # Remove repeated address tails if excessively long
-        name_parts = raw_name.split(",")
-        short_name = name_parts[0].strip()
-        if len(name_parts) > 1 and len(name_parts[1].strip()) < 35 and "district" not in name_parts[1].lower():
-            short_name += f", {name_parts[1].strip()}"
+        code = html.escape(str(meta.get("tnea_code") or meta.get("code") or "N/A")).strip()
+        raw_name = str(meta.get("college_name") or meta.get("name") or "Unknown College").strip()
         
-        dist = str(meta.get("district") or "Tamil Nadu")
+        # Separate primary college title from complete campus address without dropping ANY details
+        parts = [p.strip() for p in raw_name.split(",") if p.strip()]
+        if len(parts) > 1:
+            if "University Departments of Anna University" in parts[0] and len(parts) > 1:
+                primary_name = f"{parts[0]}, {parts[1]}"
+                address = ", ".join(parts[2:])
+            else:
+                primary_name = parts[0]
+                address = ", ".join(parts[1:])
+            
+            safe_primary = html.escape(primary_name)
+            safe_address = html.escape(address)
+            name_cell_html = f"<b>{safe_primary}</b>"
+            if safe_address:
+                name_cell_html += f"<br/><font color='#64748b' size='6.5'>{safe_address}</font>"
+        else:
+            name_cell_html = f"<b>{html.escape(raw_name)}</b>"
+        
+        dist = html.escape(str(meta.get("district") or "Tamil Nadu")).strip()
         is_auto = bool(meta.get("autonomous", False))
         status = "Autonomous" if is_auto else "Affiliated"
         
@@ -174,13 +188,13 @@ def generate_colleges_pdf(
         table_data.append([
             Paragraph(str(i + 1), cell_style),
             Paragraph(code, cell_bold_style),
-            Paragraph(short_name, cell_style),
+            Paragraph(name_cell_html, cell_style),
             Paragraph(dist, cell_style),
             Paragraph(status, cell_style),
-            Paragraph(seats, cell_bold_style)
+            Paragraph(html.escape(seats), cell_bold_style)
         ])
 
-    col_widths = [28, 42, 255, 85, 75, 50]
+    col_widths = [26, 36, 275, 78, 72, 48]
     t = Table(table_data, colWidths=col_widths, repeatRows=1)
     t.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e40af')),
@@ -197,3 +211,4 @@ def generate_colleges_pdf(
     # Build PDF with dynamic footer
     doc.build(elements, canvasmaker=NumberedCanvas)
     return buffer.getvalue()
+
