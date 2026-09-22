@@ -45,10 +45,10 @@ The official TNEA database tracks Autonomous status and NBA branch-level accredi
 - EE = Electrical and Electronics Engineering (EEE)
 - CE = Civil Engineering
 - IT = Information Technology
-- AD = Artificial Intelligence and Data Science (AI & DS / AI and DS)
-- AI / AL = Artificial Intelligence and Machine Learning (AI & ML)
+- AD / AT = Artificial Intelligence and Data Science (AI & DS / AI and DS)
+- AL / AM / CG = Artificial Intelligence and Machine Learning (AI & ML / CSE with AI & ML)
 - CB = Computer Science and Business Systems (CSBS)
-- CY = Cyber Security
+- CY / SC = Cyber Security / CSE (Cyber Security)
 - AU = Automobile Engineering
 - CH = Chemical Engineering
 - BM = Biomedical Engineering
@@ -67,7 +67,11 @@ The official TNEA database tracks Autonomous status and NBA branch-level accredi
     2. Provide the complete list of all matching colleges from the context in a clean, compact numbered format (with TNEA Code, Name, District, and Intake Seats).
     3. Do NOT provide PDF download links. Render the entire response directly inside the chat.
 
-INSTRUCTION: If the context shows a college has branch code "AD" or lists Artificial Intelligence and Data Science, and the student asks if it offers "AI & DS" or "Artificial Intelligence", you MUST answer YES and specify the approved intake. Treat branch codes and full names as identical.
+10. COLLEGE COURSE INQUIRY RULE:
+- If the student asks whether a specific college offers a course (e.g. "Does Sairam offer AI & ML?"):
+  * Check the retrieved college's branch list carefully.
+  * For Artificial Intelligence and Machine Learning (AI & ML), check for AL, AM (Computer Science and Engineering - Artificial Intelligence and Machine Learning), or CG. If present, answer YES, state the exact degree name (e.g. B.E. Computer Science and Engineering - AI & ML, branch code AM), and state the approved intake (e.g. 180 seats). Also mention any closely related AI branches like Artificial Intelligence and Data Science (AD) and their intake.
+  * If the branch is genuinely not offered by that college, state clearly that it is not offered, and list the relevant computer/engineering branches that are available.
 """
 
 def format_history_for_gemini(history: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -19,55 +19,101 @@ def _load_models():
 
 QUERY_PREFIX = ""
 
-# ═══════════════ 🧠 ALIAS DICTIONARY (EXACT CSV MATCHES) ═══════════════
+# ═══════════════ 🧠 ALIAS DICTIONARY (EXACT TNEA CODES) ═══════════════
 COLLEGE_ALIASES = {
-    "ceg": "University Departments of Anna University , Chennai - CEG Campus",
-    "mit": "University Departments of Anna University , Chennai - MIT Campus",
-    "act": "University Departments of Anna University , Chennai - ACT Campus",
-    "psg": "PSG College of Technology",
-    "psg tech": "PSG College of Technology",
-    "psg college of technology": "PSG College of Technology",
-    "ssn": "SSN College of Engineering",
-    "ssn college of engineering": "SSN College of Engineering",
-    "svce": "Sri Venkateswara College of Engineering",
-    "sairam": "Sri Sai Ram Engineering College",  
-    "thiagarajar": "Thiagarajar College of Engineering",
-    "tce": "Thiagarajar College of Engineering",
-    "thiagarajar college of engineering": "Thiagarajar College of Engineering",
-    "kct": "Kumaraguru College of Technology",
-    "kumaraguru": "Kumaraguru College of Technology",
-    "kumaraguru college of technology": "Kumaraguru College of Technology",
-    "skcet": "Sri Krishna College of Engineering and Technology", 
-    "sri krishna": "Sri Krishna College of Engineering and Technology",
-    "bitsathy": "Bannari Amman Institute of Technology",
-    "bannari amman": "Bannari Amman Institute of Technology",
-    "bannari amman institute of technology": "Bannari Amman Institute of Technology",
-    "bannari amman institute": "Bannari Amman Institute of Technology",
-    "bannari": "Bannari Amman Institute of Technology",
-    "cit": "Coimbatore Institute of Technology",
-    "coimbatore institute of technology": "Coimbatore Institute of Technology",
-    "easwari": "Easwari Engineering College",
-    "panimalar": "Panimalar Engineering College",
-    "rajalakshmi": "Rajalakshmi Engineering College",
-    "rec": "Rajalakshmi Engineering College",
-    "velammal": "Velammal Engineering College",
-    "sona": "Sona College of Technology",
-    "kongu": "Kongu Engineering College",
-    "mepco": "Mepco Schlenk Engineering College",
-    "saveetha": "Saveetha Engineering College",
-    "rmk": "R M K Engineering College",
-    "srm": "SRM Institute of Science and Technology",
-    "gct": "Government College of Technology",
-    "government college of technology": "Government College of Technology"
+    # Premier Anna University Departments
+    "ceg": "1",
+    "anna university ceg": "1",
+    "act": "2",
+    "anna university act": "2",
+    "sap": "3",
+    "mit": "4",
+    "anna university mit": "4",
+    "mit campus": "4",
+    
+    # Top Tier-1 Colleges
+    "gct": "2005",
+    "government college of technology": "2005",
+    "psg": "2006",
+    "psg tech": "2006",
+    "psg college of technology": "2006",
+    "psg i tech": "2377",
+    "psg itech": "2377",
+    "psg institute of technology": "2377",
+    "cit": "2007",
+    "coimbatore institute of technology": "2007",
+    "tce": "5008",
+    "thiagarajar": "5008",
+    "thiagarajar college of engineering": "5008",
+    "svce": "1219",
+    "sri venkateswara": "1219",
+    "sri venkateswara college of engineering": "1219",
+    "kct": "2712",
+    "kumaraguru": "2712",
+    "kumaraguru college of technology": "2712",
+    "skcet": "2718",
+    "sri krishna": "2718",
+    "sri krishna college of engineering and technology": "2718",
+    "sri krishna college of enginering and technology": "2718",
+    "bitsathy": "2702",
+    "bannari amman": "2702",
+    "bannari": "2702",
+    "bannari amman institute of technology": "2702",
+    "bannari amman institute": "2702",
+    "rmk": "1113",
+    "rmk engineering college": "1113",
+    "r m k": "1113",
+    "rec": "1211",
+    "rajalakshmi": "1211",
+    "rajalakshmi engineering college": "1211",
+    "kongu": "2711",
+    "kongu engineering college": "2711",
+    "sairam": "1419",
+    "sai ram": "1419",
+    "sri sairam": "1419",
+    "sri sai ram": "1419",
+    "sairam engineering college": "1419",
+    "sairam enginering college": "1419",
+    "sri sairam engineering college": "1419",
+    "sri sai ram engineering college": "1419",
+    "sri sai ram enginering college": "1419",
+    "mepco": "4960",
+    "mepco schlenk": "4960",
+    "saveetha": "1216",
+    "saveetha engineering college": "1216",
+    "easwari": "1304",
+    "easwari engineering college": "1304",
+    "panimalar": "1210",
+    "panimalar engineering college": "1210",
+    "sona": "2618",
+    "sona college of technology": "2618",
+    "velammal": "1115",
+    "velammal engineering college": "1115",
+    "cit chennai": "1399",
+    "chennai institute of technology": "1399",
+    "loyola icam": "1149",
+    "licet": "1149",
+    "srm trp": "3795",
+    "srm valliammai": "1422",
+    "valliammai": "1422",
+    "st joseph": "1317",
+    "st josephs": "1317",
+    "st. joseph's": "1317",
+    "st joseph's": "1317",
+    "meenakshi sundararajan": "1309",
+    "ramco": "4678",
+    "ramco institute of technology": "4678",
+    "saranathan": "3819",
+    "saranathan college of engineering": "3819"
 }
 
 # ═══════════════ 🎓 BRANCH SYNONYMS & CANONICAL MAPPINGS ═══════════════
 BRANCH_SYNONYMS = {
     "computer science": "CS", "computer science courses": "CS", "computer science and engineering": "CS",
     "computer science engineering": "CS", "cse": "CS", "cs": "CS",
-    "artificial intelligence and data science": "AD", "ai & ds": "AD", "ai and ds": "AD", "ai&ds": "AD",
-    "ai & data science": "AD", "ai and data science": "AD", "ad": "AD",
+    "artificial intelligence and data science": "AD", "ai & ds": "AD", "ai and ds": "AD", "ai&ds": "AD", "ai & data science": "AD", "ai and data science": "AD", "ad": "AD",
     "ai & ml": "AL", "ai and ml": "AL", "ai&ml": "AL", "artificial intelligence and machine learning": "AL", "al": "AL",
+    "cse ai & ml": "AM", "cse aiml": "AM", "cse ai ml": "AM", "am": "AM",
     "cyber security": "CY", "cybersecurity": "CY", "cyber security specialization": "CY", "cy": "CY",
     
     # ❌ REMOVED "me": "ME" to prevent false positive on "tell me about..."
@@ -140,6 +186,7 @@ CANONICAL_BRANCH_NAMES = {
     "MI": "Mining Engineering",
     "IE": "Industrial Engineering",
     "MN": "Manufacturing Engineering",
+    "AM": "Computer Science and Engineering (Artificial Intelligence and Machine Learning)",
 }
 
 DISTRICT_SYNONYMS = {
@@ -161,6 +208,7 @@ _COLLEGE_MAP_CACHE: Dict[str, Dict] = {}
 _COLLEGE_DIR_CACHE: Dict[str, str] = {}
 _COLLEGE_DIR_CLEAN_CACHE: Dict[str, str] = {}
 _COLLEGE_INDEX: List[Dict[str, Any]] = []
+_COLLEGE_BY_CODE: Dict[str, Dict] = {}
 _LOCAL_DOCUMENTS: Optional[List[Dict[str, Any]]] = None
 _LOCAL_ADMISSION_DOCUMENTS: Optional[List[Dict[str, Any]]] = None
 
@@ -242,7 +290,7 @@ def _extract_college_clean_words(text: str) -> List[str]:
     return [w for w in clean.split() if w not in COLLEGE_PREFIXES and w not in COLLEGE_STOPWORDS and len(w) > 2]
 
 def _load_college_caches():
-    global _COLLEGE_MAP_CACHE, _COLLEGE_DIR_CACHE, _COLLEGE_DIR_CLEAN_CACHE, _COLLEGE_INDEX
+    global _COLLEGE_MAP_CACHE, _COLLEGE_DIR_CACHE, _COLLEGE_DIR_CLEAN_CACHE, _COLLEGE_INDEX, _COLLEGE_BY_CODE
     if _COLLEGE_INDEX:
         return
 
@@ -253,6 +301,7 @@ def _load_college_caches():
         name = meta.get("college_name", "")
         if tnea_code and name:
             _COLLEGE_MAP_CACHE[tnea_code] = meta
+            _COLLEGE_BY_CODE[tnea_code] = doc
             name_lower = name.lower()
             _COLLEGE_DIR_CACHE[name_lower] = name
 
@@ -297,15 +346,17 @@ def resolve_college_entity(query_or_name: str) -> Optional[Dict[str, Any]]:
     code_match = re.search(r"\b(\d{4})\b", raw_input)
     if code_match:
         found_code = code_match.group(1)
-        for item in _COLLEGE_INDEX:
-            if item["code"] == found_code:
-                logger.info(f"🧠 Matched TNEA code: {found_code} -> {item['name']}")
-                return item["doc"]
+        if found_code in _COLLEGE_BY_CODE:
+            doc = _COLLEGE_BY_CODE[found_code]
+            logger.info(f"🧠 Matched TNEA code: {found_code} -> {doc.get('metadata', {}).get('college_name')}")
+            return doc
 
-    # 2. Check Alias dictionary
-    for alias, full_name in COLLEGE_ALIASES.items():
+    # 2. Check Alias dictionary (sorted longest first so full phrases match before short acronyms)
+    for alias in sorted(COLLEGE_ALIASES.keys(), key=len, reverse=True):
         pattern = rf"\b{re.escape(alias)}\b"
         if re.search(pattern, lower_input):
+            target = COLLEGE_ALIASES[alias]
+            
             # If query specifies a district, disambiguate across multi-campus institutions
             user_district = None
             for d_name in TAMIL_NADU_DISTRICTS:
@@ -313,29 +364,21 @@ def resolve_college_entity(query_or_name: str) -> Optional[Dict[str, Any]]:
                     user_district = d_name
                     break
 
-            if user_district:
+            if target.isdigit():
+                if user_district:
+                    for item in _COLLEGE_INDEX:
+                        if (alias in item["fused"] or item["code"] == target) and user_district in item["name"].lower():
+                            logger.info(f"🧠 Alias + District match: '{alias}' in '{user_district}' -> '{item['name']}'")
+                            return item["doc"]
+                doc = _COLLEGE_BY_CODE.get(target)
+                if doc:
+                    logger.info(f"🧠 Alias match: '{alias}' -> Code {target} ('{doc.get('metadata', {}).get('college_name')}')")
+                    return doc
+            else:
                 for item in _COLLEGE_INDEX:
-                    if (alias in item["fused"] or full_name.lower() in item["name"].lower()) and user_district in item["name"].lower():
-                        logger.info(f"🧠 Alias + District match: '{alias}' in '{user_district}' -> '{item['name']}'")
+                    if target.lower() in item["name"].lower() or item["name"].lower() in target.lower():
+                        logger.info(f"🧠 Alias match: '{alias}' -> '{target}' ('{item['name']}')")
                         return item["doc"]
-
-            logger.info(f"🧠 Alias match: '{alias}' -> '{full_name}'")
-            for item in _COLLEGE_INDEX:
-                if full_name.lower() in item["name"].lower() or item["name"].lower() in full_name.lower():
-                    return item["doc"]
-
-    # If the input is clearly a search / listing intent sentence, skip entity resolution
-    is_search_intent = any(
-        re.search(rf"\b{re.escape(w)}\b", lower_input)
-        for w in [
-            "what", "which", "how", "list", "top", "best", "colleges", "clgs",
-            "have", "has", "offer", "offers", "offering", "available",
-            "courses", "course", "branch", "branches", "department", "departments",
-            "any", "show", "find", "where"
-        ]
-    )
-    if is_search_intent:
-        return None
 
     q_words = _extract_college_clean_words(lower_input)
     q_fused = "".join(q_words)
@@ -349,20 +392,22 @@ def resolve_college_entity(query_or_name: str) -> Optional[Dict[str, Any]]:
             candidates.append((len(item["core_lower"]), 25.0 + dist_bonus, item))
             continue
 
-        # B. Exact fused brand match (e.g. 'sairam' matching 'sairam' in fused query or word)
-        if item["fused"] and len(item["fused"]) >= 4:
-            pattern = rf"\b{re.escape(item['fused'])}\b"
-            if re.search(pattern, lower_input) or any(item["fused"] == w for w in q_words) or item["fused"] == q_fused:
-                candidates.append((len(item["fused"]), 20.0 + dist_bonus, item))
+        # B. Exact fused brand match (excluding pure district names)
+        fused = item["fused"]
+        if fused and len(fused) >= 4 and fused not in TAMIL_NADU_DISTRICTS:
+            pattern = rf"\b{re.escape(fused)}\b"
+            if re.search(pattern, lower_input) or any(fused == w for w in q_words) or fused == q_fused:
+                candidates.append((len(fused), 20.0 + dist_bonus, item))
                 continue
 
-        # C. All distinctive words of college present in query (e.g. 'sai' and 'ram' both in query)
-        if len(item["words"]) >= 2 and item["words"].issubset(set(q_words)):
-            candidates.append((sum(len(w) for w in item["words"]), 15.0 + dist_bonus, item))
+        # C. All distinctive words of college present in query (>= 2 words, excluding districts)
+        non_dist_words = {w for w in item["words"] if w not in TAMIL_NADU_DISTRICTS}
+        if len(non_dist_words) >= 2 and non_dist_words.issubset(set(q_words)):
+            candidates.append((sum(len(w) for w in non_dist_words), 15.0 + dist_bonus, item))
             continue
 
-        # D. Single distinctive word (>= 5 characters, e.g. 'saranathan', 'kumaraguru', 'mepco', 'velammal')
-        distinctive = [w for w in item["words"] if len(w) >= 5]
+        # D. Single distinctive word (>= 5 characters, excluding districts)
+        distinctive = [w for w in item["words"] if len(w) >= 5 and w not in TAMIL_NADU_DISTRICTS]
         if distinctive and all(w in q_words for w in distinctive):
             candidates.append((sum(len(w) for w in distinctive), 10.0 + dist_bonus, item))
             continue
@@ -373,19 +418,19 @@ def resolve_college_entity(query_or_name: str) -> Optional[Dict[str, Any]]:
         logger.info(f"🧠 Universal entity match: '{query_or_name}' -> '{candidates[0][2]['name']}' (Score: {candidates[0][1]})")
         return best_doc
 
-    # E. Fuzzy fallback for minor typos on fused brand names (threshold 0.80)
+    # E. Fuzzy fallback for minor typos on fused brand names (threshold 0.85, excluding districts)
     best_fuzzy = None
     best_fuzzy_score = 0.0
     for item in _COLLEGE_INDEX:
-        if len(item["fused"]) >= 5:
+        if len(item["fused"]) >= 5 and item["fused"] not in TAMIL_NADU_DISTRICTS:
             for qw in q_words:
-                if len(qw) >= 4:
+                if len(qw) >= 4 and qw not in TAMIL_NADU_DISTRICTS:
                     s = difflib.SequenceMatcher(None, qw, item["fused"]).ratio()
                     if s > best_fuzzy_score:
                         best_fuzzy_score = s
                         best_fuzzy = item
 
-    if best_fuzzy_score >= 0.80 and best_fuzzy:
+    if best_fuzzy_score >= 0.85 and best_fuzzy:
         logger.info(f"🧠 Fuzzy entity match: '{query_or_name}' -> '{best_fuzzy['name']}' (Score: {best_fuzzy_score:.2f})")
         return best_fuzzy["doc"]
 
@@ -923,13 +968,17 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
         "offer" in query_lower or 
         "list" in query_lower or 
         "have" in query_lower or
-        "has" in query_lower or
         bool(branch_code) or
         is_autonomous or
         is_hostel_query
     )
 
-    if is_college_list_query or bool(branch_code):
+    is_listing_indicator = bool(re.search(
+        r'\b(list|colleges|college|clgs|clg|which|what|show|find|options|where|top|best|offer|offers|offering|have|has)\b',
+        query_lower
+    ))
+
+    if is_listing_indicator and (is_college_list_query or bool(branch_code)):
         if explicit_k is not None:
             # User specifically asked for "top N" or "best N" (e.g. top 3, top 5)
             target_limit = max(1, explicit_k)
