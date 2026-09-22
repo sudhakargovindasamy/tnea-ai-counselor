@@ -111,6 +111,37 @@ BRANCH_SYNONYMS = {
     "electronics and instrumentation": "EI", "eie": "EI", "ei": "EI"
 }
 
+CANONICAL_BRANCH_NAMES = {
+    "CS": "Computer Science and Engineering (CSE)",
+    "EC": "Electronics and Communication Engineering (ECE)",
+    "ME": "Mechanical Engineering",
+    "EE": "Electrical and Electronics Engineering (EEE)",
+    "IT": "Information Technology (IT)",
+    "CE": "Civil Engineering",
+    "AD": "Artificial Intelligence and Data Science (AI & DS)",
+    "AL": "Artificial Intelligence and Machine Learning (AI & ML)",
+    "CB": "Computer Science and Business Systems (CSBS)",
+    "CY": "Cyber Security",
+    "BT": "Biotechnology",
+    "BM": "Biomedical Engineering",
+    "AG": "Agricultural Engineering",
+    "AU": "Automobile Engineering",
+    "CH": "Chemical Engineering",
+    "AE": "Aeronautical Engineering",
+    "MR": "Marine Engineering",
+    "AO": "Aerospace Engineering",
+    "RM": "Robotics and Automation",
+    "MZ": "Mechatronics Engineering",
+    "PE": "Petroleum Engineering",
+    "PH": "Pharmaceutical Technology",
+    "FD": "Food Technology",
+    "TX": "Textile Technology",
+    "FT": "Fashion Technology",
+    "MI": "Mining Engineering",
+    "IE": "Industrial Engineering",
+    "MN": "Manufacturing Engineering",
+}
+
 DISTRICT_SYNONYMS = {
     "kancheepuram": "Kanchipuram", "kanchipuram": "Kanchipuram", "chengalpet": "Chengalpattu", "chengalpattu": "Chengalpattu",
     "trichirappalli": "Tiruchirappalli", "trichy": "Tiruchirappalli", "kanniyakumari": "Kanyakumari", "kanyakumari": "Kanyakumari",
@@ -495,6 +526,112 @@ def format_context_xml(docs: List[Dict]) -> str:
     ctx += "</knowledge_base>"
     return ctx
 
+def compute_course_aggregation(branch_code: str, district: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Computes exact database-wide statistics (total offering colleges and sum of approved seats)
+    across the entire dataset, preventing partial 6-college hallucinations.
+    """
+    local_docs = _get_local_documents()
+    b_code = branch_code.strip().upper()
+    matching_colleges = []
+    total_seats = 0
+    district_counts = {}
+
+    for d in local_docs:
+        meta = d.get("metadata", {})
+        c_district = meta.get("district", "")
+        if district and district.lower() != c_district.lower():
+            continue
+        c_branches = meta.get("department_codes", meta.get("branch_codes", []))
+        if b_code in c_branches:
+            intakes = meta.get("department_intakes", {})
+            intake = 0
+            if isinstance(intakes, dict):
+                intake = int(intakes.get(b_code, 0) or 0)
+            elif isinstance(intakes, list) and b_code in c_branches:
+                idx = c_branches.index(b_code)
+                if idx < len(intakes):
+                    intake = int(intakes[idx] or 0)
+
+            total_seats += intake
+            district_counts[c_district] = district_counts.get(c_district, 0) + 1
+            matching_colleges.append({
+                "tnea_code": meta.get("tnea_code"),
+                "college_name": meta.get("college_name"),
+                "district": c_district,
+                "intake": intake,
+                "autonomous": meta.get("autonomous", False),
+                "placement_rate": meta.get("placement_rate", 0.0),
+                "pass_percentage": meta.get("pass_percentage", 0.0),
+                "doc": d
+            })
+
+    TIER_1_CODES = ["1", "4", "2", "2006", "1315", "5008", "2005", "2007", "1219", "2712", "2718", "2702", "1113", "1211", "2711"]
+    matching_colleges.sort(
+        key=lambda x: (
+            (1000.0 - TIER_1_CODES.index(str(x.get("tnea_code", ""))) * 40.0) if str(x.get("tnea_code", "")) in TIER_1_CODES else 0.0,
+            50.0 if x.get("autonomous") else 0.0,
+            float(x.get("pass_percentage") or 0.0) + float(x.get("placement_rate") or 0.0),
+            x.get("intake", 0)
+        ),
+        reverse=True
+    )
+
+    canonical_name = CANONICAL_BRANCH_NAMES.get(b_code, f"{b_code} Engineering")
+
+    return {
+        "branch_code": b_code,
+        "branch_name": canonical_name,
+        "district": district,
+        "total_colleges": len(matching_colleges),
+        "total_seats": total_seats,
+        "district_breakdown": district_counts,
+        "colleges": matching_colleges
+    }
+
+def format_aggregation_xml(agg: Dict[str, Any], top_n_preview: int = 10) -> str:
+    district_str = f' district="{agg["district"]}"' if agg.get("district") else ""
+    xml = f'<aggregation_data type="course_seats_summary" branch_code="{agg["branch_code"]}" branch_name="{agg["branch_name"]}"{district_str}>\n'
+    xml += f'  <total_colleges_offering_course>{agg["total_colleges"]}</total_colleges_offering_course>\n'
+    xml += f'  <total_approved_seats>{agg["total_seats"]}</total_approved_seats>\n'
+    xml += '  <summary_instruction>CRITICAL: Use the EXACT total numbers above for answering. Total colleges: '
+    xml += f'{agg["total_colleges"]}, Total approved seats: {agg["total_seats"]}. DO NOT recalculate, guess, or sum partial lists.</summary_instruction>\n'
+    
+    xml += '  <top_performing_colleges>\n'
+    for c in agg["colleges"][:top_n_preview]:
+        xml += (f'    <college tnea_code="{c["tnea_code"]}" name="{c["college_name"]}" '
+                f'district="{c["district"]}" seats="{c["intake"]}" autonomous="{c["autonomous"]}"/>\n')
+    xml += '  </top_performing_colleges>\n'
+    xml += '</aggregation_data>\n'
+    return xml
+
+def format_catalog_list_xml(docs: List[Dict], branch_code: str = None, district: str = None) -> str:
+    b_name = CANONICAL_BRANCH_NAMES.get(branch_code, branch_code) if branch_code else "Engineering"
+    dist_str = f' district="{district}"' if district else ""
+    xml = f'<college_catalog total_colleges="{len(docs)}" branch_code="{branch_code or ""}" branch_name="{b_name}"{dist_str}>\n'
+    xml += f'  <summary_instruction>CRITICAL: There are {len(docs)} colleges offering this course in the official TNEA database. State the total count ({len(docs)} colleges), then present the full list of colleges as requested.</summary_instruction>\n'
+    xml += '  <colleges>\n'
+    for i, d in enumerate(docs):
+        meta = d.get("metadata", {})
+        code = meta.get("tnea_code", "N/A")
+        name = meta.get("college_name", "").split(",")[0].strip()
+        dist = meta.get("district", "Tamil Nadu")
+        auto = "Autonomous" if meta.get("autonomous") else "Non-Autonomous"
+        intakes = meta.get("department_intakes", {})
+        seats_str = ""
+        if branch_code and isinstance(intakes, dict) and branch_code in intakes:
+            seats_str = f' seats="{intakes[branch_code]}"'
+        xml += f'    <item id="{i+1}" code="{code}" name="{name}" district="{dist}" status="{auto}"{seats_str}/>\n'
+    xml += '  </colleges>\n'
+    xml += '</college_catalog>\n'
+    
+    # Also attach full cards for top 5 premier colleges
+    xml += '<featured_premier_colleges>\n'
+    for doc in docs[:5]:
+        xml += doc.get("content", "") + "\n---\n"
+    xml += '</featured_premier_colleges>\n'
+    return xml
+
 def reorder_for_llm(docs: List[Dict]) -> List[Dict]:
     """Mitigates 'Lost in the Middle' phenomenon for LLMs."""
     if len(docs) < 3:
@@ -553,7 +690,7 @@ def entity_lookup(college_name: str, limit: int = 10) -> List[Dict]:
 
 # ─────────────── 🚀 DIRECT CATALOG FILTERING ───────────────
 def get_colleges_by_filters(district: str = None, branch_code: str = None, 
-                            has_hostel: bool = False, autonomous: bool = None, limit: int = 10,
+                            has_hostel: bool = False, autonomous: bool = None, limit: Optional[int] = 10,
                             department_code: str = None) -> List[Dict]:
     local_docs = _get_local_documents()
     candidates = []
@@ -585,16 +722,22 @@ def get_colleges_by_filters(district: str = None, branch_code: str = None,
         candidates.append(d)
 
     if candidates:
-        # Sort by pass percentage & placement rate so premier colleges rank first
-        candidates.sort(
-            key=lambda x: (
-                float(x.get("metadata", {}).get("pass_percentage") or 0.0) +
-                float(x.get("metadata", {}).get("placement_rate") or 0.0)
-            ),
-            reverse=True
-        )
+        # Sort by institutional tier, autonomy, and placement/pass percentage
+        TIER_1_CODES = ["1", "4", "2", "2006", "1315", "5008", "2005", "2007", "1219", "2712", "2718", "2702", "1113", "1211", "2711"]
+        def rank_sort_key(doc: Dict) -> float:
+            m = doc.get("metadata", {})
+            c_code = str(m.get("tnea_code", ""))
+            tier_bonus = (1000.0 - TIER_1_CODES.index(c_code) * 40.0) if c_code in TIER_1_CODES else 0.0
+            auto_bonus = 50.0 if m.get("autonomous") else 0.0
+            perf = float(m.get("pass_percentage") or 0.0) + float(m.get("placement_rate") or 0.0)
+            return tier_bonus + auto_bonus + perf
+
+        candidates.sort(key=rank_sort_key, reverse=True)
         logger.info(f"🎯 Filter match: Found {len(candidates)} colleges (District: {norm_district}, Branch/Dept: {target_code}, Autonomous: {autonomous}, Hostel: {has_hostel})")
-        return deduplicate_docs(candidates)[:limit]
+        deduped = deduplicate_docs(candidates)
+        if limit is not None and limit > 0:
+            return deduped[:limit]
+        return deduped
 
     try:
         q = supabase.table("documents").select("id, content, metadata").eq("metadata->>doc_type", "college_info")
@@ -602,7 +745,8 @@ def get_colleges_by_filters(district: str = None, branch_code: str = None,
             q = q.ilike("metadata->>district", norm_district)
         if autonomous is not None:
             q = q.eq("metadata->>autonomous", str(autonomous).lower())
-        res = q.limit(limit * 2).execute()
+        fetch_limit = (limit * 2) if (limit is not None and limit > 0) else 500
+        res = q.limit(fetch_limit).execute()
         if res.data:
             filtered = res.data
             if target_code:
@@ -610,7 +754,10 @@ def get_colleges_by_filters(district: str = None, branch_code: str = None,
                     doc for doc in filtered
                     if target_code in doc.get("metadata", {}).get("department_codes", doc.get("metadata", {}).get("branch_codes", []))
                 ]
-            return deduplicate_docs(filtered)[:limit]
+            deduped = deduplicate_docs(filtered)
+            if limit is not None and limit > 0:
+                return deduped[:limit]
+            return deduped
     except Exception as e:
         logger.debug(f"Supabase filter query exception: {e}")
 
@@ -685,7 +832,33 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
         doc_copy["rerank_score"] = 10.0
         return [doc_copy], format_context_xml([doc_copy])
 
-    # 3. DIRECT CATALOG FILTERING (Runs for listing and category searches)
+    # 3. AGGREGATIONS & DIRECT CATALOG FILTERING
+    is_aggregation_query = (
+        active_filters.get("is_aggregation") is True or
+        (intent == "numerical" and active_filters.get("numerical_metric") in ["total_intake", "fees", "hostel_rent"]) or
+        bool(re.search(r'\b(sum|total\s+(?:number\s+of\s+)?seats|total\s+intake|how\s+many\s+seats|sum\s+of\s+seats|count\s+(?:of\s+)?colleges|how\s+many\s+colleges)\b', query_lower))
+    )
+
+    if is_aggregation_query and branch_code:
+        agg = compute_course_aggregation(branch_code=branch_code, district=district)
+        agg_xml = format_aggregation_xml(agg, top_n_preview=10)
+        preview_docs = [c["doc"] for c in agg["colleges"][:10]]
+        for d in preview_docs:
+            d["rerank_score"] = 10.0
+        logger.info(f"📊 Aggregation handled: {agg['branch_name']} -> {agg['total_colleges']} colleges, {agg['total_seats']} seats")
+        return preview_docs, agg_xml
+
+    # Check for Explicit Top-K request (e.g. "top 3 colleges", "top 5", "best 3", "give me 3 colleges")
+    explicit_k = active_filters.get("explicit_top_k")
+    if explicit_k is None:
+        top_match = (
+            re.search(r'\b(?:top|best|first)\s+(\d+)\b', query_lower) or
+            re.search(r'\b(\d+)\s+(?:colleges?|clgs?)\b', query_lower) or
+            re.search(r'\bgive\s+me\s+(\d+)\b', query_lower)
+        )
+        if top_match:
+            explicit_k = int(top_match.group(1))
+
     is_hostel_query = "hostel" in query_lower or "mess" in query_lower or "room rent" in query_lower
     is_college_list_query = (bool(district) or bool(branch_code) or is_autonomous or is_hostel_query) and (
         "colleges" in query_lower or 
@@ -706,18 +879,42 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
     )
 
     if is_college_list_query or bool(branch_code):
-        catalog_docs = get_colleges_by_filters(
-            district=district,
-            branch_code=branch_code,
-            has_hostel=is_hostel_query,
-            autonomous=autonomous_filter,
-            limit=max(top_k, 6)
-        )
-        if catalog_docs:
-            catalog_docs = deduplicate_docs(catalog_docs)
-            for c in catalog_docs:
-                c["rerank_score"] = 9.0
-            return catalog_docs, format_context_xml(catalog_docs)
+        if explicit_k is not None:
+            # User specifically asked for "top N" or "best N" (e.g. top 3, top 5)
+            target_limit = max(1, explicit_k)
+            catalog_docs = get_colleges_by_filters(
+                district=district,
+                branch_code=branch_code,
+                has_hostel=is_hostel_query,
+                autonomous=autonomous_filter,
+                limit=target_limit
+            )
+            if catalog_docs:
+                catalog_docs = deduplicate_docs(catalog_docs)
+                for c in catalog_docs:
+                    c["rerank_score"] = 9.5
+                return catalog_docs, format_context_xml(catalog_docs)
+        else:
+            # Broad listing query (e.g. "List the colleges that offer CSE course", "Which colleges have Marine Engineering")
+            # Fetch ALL matching colleges without artificial top_k truncation!
+            catalog_docs = get_colleges_by_filters(
+                district=district,
+                branch_code=branch_code,
+                has_hostel=is_hostel_query,
+                autonomous=autonomous_filter,
+                limit=None
+            )
+            if catalog_docs:
+                catalog_docs = deduplicate_docs(catalog_docs)
+                for c in catalog_docs:
+                    c["rerank_score"] = 9.0
+                
+                # If small list (<= 30 colleges, e.g. Marine, Mining, Petroleum), format full cards
+                if len(catalog_docs) <= 30:
+                    return catalog_docs, format_context_xml(catalog_docs)
+                else:
+                    # For large listings (e.g. 408 CSE colleges), format full catalog XML + top cards
+                    return catalog_docs, format_catalog_list_xml(catalog_docs, branch_code=branch_code, district=district)
 
     # 4. Check if the user specifically asked for an explicit NON-EXISTENT college entity
     is_search_or_list_intent = any(

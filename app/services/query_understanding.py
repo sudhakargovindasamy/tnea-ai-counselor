@@ -37,6 +37,8 @@ class QueryUnderstandingSchema(BaseModel):
     numerical_metric: Literal["placement", "pass_percentage", "total_intake", "fees", "hostel_rent", "transport", "cutoff", "marks"] | None = Field(default=None)
     numerical_operator: Literal["highest", "lowest", "greater_than", "less_than"] | None = Field(default=None)
     numerical_value: float | None = Field(default=None, description="Target number if operator is greater_than/less_than")
+    is_aggregation: bool | None = Field(default=None, description="True if query asks for sum, total seats, total intake, or dataset count")
+    explicit_top_k: int | None = Field(default=None, description="Exact number if student asked for top N or best N colleges (e.g. 'top 3' -> 3)")
 
 class QueryRewriteSchema(BaseModel):
     standalone_question: str = Field(description="The fully resolved standalone question")
@@ -149,6 +151,8 @@ RULES:
 8. For district names, use Title Case (e.g., "Chennai", "Coimbatore", "Salem").
 9. Extract numerical_operator and numerical_value if applicable (e.g., "Top 5" -> operator: "highest", value: 5).
 10. If asking about cutoff or marks, set intent to "cutoff" and extract the cutoff value.
+11. If asking to sum, calculate total seats, or count colleges across a branch or district (e.g., "Sum the total number of seats in CSE", "Total seats in CSE"), set is_aggregation to true.
+12. If asking for a specific number of top colleges (e.g. "top 3 colleges", "top 5"), extract explicit_top_k.
 
 Question: {question}
 """
@@ -161,19 +165,24 @@ Question: {question}
 
     result = _generate_with_fallback(client, FALLBACK_MODELS, prompt, config, QueryUnderstandingSchema)
     
-    if result:
-        # Convert Pydantic model to dict, excluding None values to keep payload clean
-        extracted = result.model_dump(exclude_none=True)
-        if "branch_code" in extracted and "department_code" not in extracted:
-            extracted["department_code"] = extracted["branch_code"]
-        elif "department_code" in extracted and "branch_code" not in extracted:
-            extracted["branch_code"] = extracted["department_code"]
-        logger.info(f"🧠 Extracted: {extracted}")
-        return extracted
-        
-    # Fallback if all models fail
-    logger.warning("⚠️ All models failed, defaulting to search intent")
-    return {"intent": "search", "raw_query": question}
+    extracted = result.model_dump(exclude_none=True) if result else {"intent": "search", "raw_query": question}
+    
+    # 🎯 Deterministic regex enhancements (guarantees 100% precision regardless of LLM variance)
+    q_low = question.lower()
+    top_m = re.search(r'\b(?:top|best|first)\s+(\d+)\b', q_low) or re.search(r'\b(\d+)\s+(?:colleges?|clgs?)\b', q_low) or re.search(r'\bgive\s+me\s+(\d+)\b', q_low)
+    if top_m:
+        extracted["explicit_top_k"] = int(top_m.group(1))
+
+    if re.search(r'\b(sum|total\s+(?:number\s+of\s+)?seats|total\s+intake|how\s+many\s+seats|sum\s+of\s+seats|count\s+(?:of\s+)?colleges|how\s+many\s+colleges)\b', q_low):
+        extracted["is_aggregation"] = True
+
+    if "branch_code" in extracted and "department_code" not in extracted:
+        extracted["department_code"] = extracted["branch_code"]
+    elif "department_code" in extracted and "branch_code" not in extracted:
+        extracted["branch_code"] = extracted["department_code"]
+
+    logger.info(f"🧠 Extracted: {extracted}")
+    return extracted
 
 
 def rewrite_query(current_question: str, history: list) -> str:

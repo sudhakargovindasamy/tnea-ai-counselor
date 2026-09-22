@@ -380,9 +380,11 @@ async def chat(request: Request, req: QueryRequest):
                 yield "data: [DONE]\n\n"
                 return
 
-            # 5. Extract Sources
+            # 5. Extract Sources (capped to top 15 for UI performance if list is large)
             sources = [extract_source_info(d) for d in docs]
             sources = deduplicate_sources(sources)
+            if len(sources) > 15:
+                sources = sources[:15]
             sources_dict = [s.model_dump() if hasattr(s, 'model_dump') else s.dict() for s in sources]
 
             # 6. Stream Generation Token-by-Token
@@ -516,9 +518,11 @@ def query(request: Request, req: QueryRequest):
         tracer.log_llm_call(prompt=prompt_preview, answer=answer)
         tracer.finish()
 
-        # 6) Deduplicate Sources
+        # 6) Deduplicate Sources (capped to top 15 for UI performance if list is large)
         sources = [extract_source_info(d) for d in docs]
         sources = deduplicate_sources(sources)
+        if len(sources) > 15:
+            sources = sources[:15]
 
         # 7) Save to Cache & Memory (🚨 ONLY IF NOT AN ERROR)
         sources_dict = [s.model_dump() if hasattr(s, 'model_dump') else s.dict() for s in sources]
