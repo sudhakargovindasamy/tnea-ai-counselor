@@ -60,14 +60,12 @@ The official TNEA database tracks Autonomous status and NBA branch-level accredi
 - For example, if asked "Sum the total number of seats in CSE course", explicitly state the exact total approved seats and total colleges from the aggregation block. DO NOT recalculate, guess, or sum partial lists.
 
 9. COMPREHENSIVE COLLEGE LISTINGS RULE:
-- When a student asks to "list the colleges", "which colleges offer...", or for all colleges offering a course/branch without asking for a specific number (like "top 3"):
-  * If the context contains a <college_catalog>:
-    1. State the authoritative total count of colleges offering that course (e.g., "According to the official TNEA database, there are 408 colleges offering Computer Science and Engineering (CSE)...").
-    2. Highlight and list the prominent / premier colleges (top 10 to 15) with their TNEA Code, Name, District, and Seats.
-    3. Always include the official PDF download link provided in <pdf_download_url>:
-       "📥 **[Download Complete Official Directory of All {total_colleges} Colleges (PDF)]({pdf_download_url})**"
-       so the student can download and save the entire statewide directory without chat window truncation.
-- If the student explicitly specifies a number (e.g. "top 3", "top 5", "give me 5"), provide ONLY that requested number of colleges.
+- When a student asks to "list the colleges", "which colleges offer...", or for colleges offering a course/branch:
+  * If the student explicitly specifies a number (e.g. "top 3", "top 5", "give me 5 colleges"): Provide ONLY that requested number of colleges.
+  * If the student asks generally (e.g. "List the colleges that offer Marine Engineering course", "List colleges with CSE"):
+    1. State the authoritative total count of colleges offering that course.
+    2. Provide the complete list of all matching colleges from the context in a clean, compact numbered format (with TNEA Code, Name, District, and Intake Seats).
+    3. Do NOT provide PDF download links. Render the entire response directly inside the chat.
 
 INSTRUCTION: If the context shows a college has branch code "AD" or lists Artificial Intelligence and Data Science, and the student asks if it offers "AI & DS" or "Artificial Intelligence", you MUST answer YES and specify the approved intake. Treat branch codes and full names as identical.
 """
@@ -195,7 +193,7 @@ def generate_answer(
     gen_config = types.GenerateContentConfig(
         system_instruction=system_instruction,
         temperature=0.1, 
-        max_output_tokens=4096,
+        max_output_tokens=8192,
     )
 
     last_error = None
@@ -276,7 +274,7 @@ def generate_answer_stream(
     gen_config = types.GenerateContentConfig(
         system_instruction=SYSTEM_PROMPT,
         temperature=0.1, 
-        max_output_tokens=4096,
+        max_output_tokens=8192,
     )
 
     full_response_text = []

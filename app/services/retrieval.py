@@ -605,45 +605,59 @@ def format_aggregation_xml(agg: Dict[str, Any], top_n_preview: int = 10) -> str:
     xml += '</aggregation_data>\n'
     return xml
 
-def format_catalog_list_xml(docs: List[Dict], branch_code: str = None, district: str = None) -> str:
+def format_complete_college_list_response(docs: List[Dict], branch_code: str = None, district: str = None) -> str:
     b_name = CANONICAL_BRANCH_NAMES.get(branch_code, branch_code) if branch_code else "Engineering"
-    dist_str = f' district="{district}"' if district else ""
+    total_colleges = len(docs)
     
-    # Generate direct download link for PDF export with absolute backend URL
-    export_params = f"?branch_code={branch_code}" if branch_code else ""
-    if district:
-        export_params += f"&district={district}" if export_params else f"?district={district}"
-    
-    base_api = os.getenv("PUBLIC_API_URL", os.getenv("API_BASE_URL", "https://tnea-ai-eng.onrender.com")).rstrip("/")
-    pdf_url = f"{base_api}/export/colleges.pdf{export_params}"
-
-    xml = f'<college_catalog total_colleges="{len(docs)}" branch_code="{branch_code or ""}" branch_name="{b_name}"{dist_str}>\n'
-    xml += f'  <pdf_download_url>{pdf_url}</pdf_download_url>\n'
-    xml += f'  <summary_instruction>CRITICAL: There are {len(docs)} colleges offering {b_name}. '
-    xml += f'1. State the total count ({len(docs)} colleges). '
-    xml += '2. Highlight and list the top 10 to 15 premier colleges with their TNEA Code, Name, District, and Seats. '
-    xml += f'3. Provide the official PDF download markdown link: `📥 **[Download Complete {len(docs)} Colleges Directory (PDF)]({pdf_url})**` so the student can easily access, print, and save the full {len(docs)}-college directory without truncation.</summary_instruction>\n'
-    xml += '  <colleges>\n'
-    for i, d in enumerate(docs[:30]):
-        meta = d.get("metadata", {})
-        code = meta.get("tnea_code", "N/A")
-        name = meta.get("college_name", "").split(",")[0].strip()
-        dist = meta.get("district", "Tamil Nadu")
-        auto = "Autonomous" if meta.get("autonomous") else "Non-Autonomous"
+    # Calculate total approved seats
+    total_seats = 0
+    for d in docs:
+        meta = d.get("metadata", d)
         intakes = meta.get("department_intakes", {})
-        seats_str = ""
         if branch_code and isinstance(intakes, dict) and branch_code in intakes:
-            seats_str = f' seats="{intakes[branch_code]}"'
-        xml += f'    <item id="{i+1}" code="{code}" name="{name}" district="{dist}" status="{auto}"{seats_str}/>\n'
-    xml += '  </colleges>\n'
-    xml += '</college_catalog>\n'
-    
-    # Also attach full cards for top 5 premier colleges
-    xml += '<featured_premier_colleges>\n'
-    for doc in docs[:5]:
-        xml += doc.get("content", "") + "\n---\n"
-    xml += '</featured_premier_colleges>\n'
-    return xml
+            try:
+                total_seats += int(intakes[branch_code])
+            except (ValueError, TypeError):
+                pass
+        elif "intake" in meta and meta["intake"] is not None:
+            try:
+                total_seats += int(meta["intake"])
+            except (ValueError, TypeError):
+                pass
+
+    seats_text = f", with a total approved intake of **{total_seats:,} seats**" if total_seats > 0 else ""
+    dist_text = f" in **{district.title()} District**" if district else ""
+
+    lines = [
+        f"According to the official TNEA database, there are **{total_colleges} colleges** offering {b_name}{dist_text}{seats_text}. Here is the complete list of colleges:\n"
+    ]
+
+    for i, d in enumerate(docs):
+        meta = d.get("metadata", d)
+        code = meta.get("tnea_code", "N/A")
+        raw_name = meta.get("college_name", "Unknown College")
+        parts = [p.strip() for p in raw_name.split(",") if p.strip()]
+        if "University Departments of Anna University" in parts[0] and len(parts) > 1:
+            name = f"{parts[0]} - {parts[1]}"
+        else:
+            name = parts[0]
+            
+        clean_name = re.sub(r"\s*\(Autonomous\)", "", name, flags=re.IGNORECASE).strip()
+        c_dist = meta.get("district", "Tamil Nadu")
+        is_auto = meta.get("autonomous", False)
+        status_label = "Autonomous" if is_auto else "Affiliated"
+        
+        intakes = meta.get("department_intakes", {})
+        seats_val = None
+        if branch_code and isinstance(intakes, dict) and branch_code in intakes:
+            seats_val = intakes[branch_code]
+        elif "intake" in meta:
+            seats_val = meta["intake"]
+            
+        seats_part = f", Seats: {seats_val}" if seats_val is not None else ""
+        lines.append(f"{i+1}. TNEA Code: {code} - {clean_name} ({status_label}), {c_dist}{seats_part}")
+
+    return "\n".join(lines)
 
 def reorder_for_llm(docs: List[Dict]) -> List[Dict]:
     """Mitigates 'Lost in the Middle' phenomenon for LLMs."""
@@ -922,12 +936,12 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
                 for c in catalog_docs:
                     c["rerank_score"] = 9.0
                 
-                # If small list (<= 30 colleges, e.g. Marine, Mining, Petroleum), format full cards
-                if len(catalog_docs) <= 30:
+                # If small list (<= 15 colleges, e.g. Marine, Mining, Petroleum), format full cards
+                if len(catalog_docs) <= 15:
                     return catalog_docs, format_context_xml(catalog_docs)
                 else:
-                    # For large listings (e.g. 408 CSE colleges), format full catalog XML + top cards
-                    return catalog_docs, format_catalog_list_xml(catalog_docs, branch_code=branch_code, district=district)
+                    # For complete in-chat listings (e.g. 408 CSE colleges), format full college list
+                    return catalog_docs, format_complete_college_list_response(catalog_docs, branch_code=branch_code, district=district)
 
     # 4. Check if the user specifically asked for an explicit NON-EXISTENT college entity
     is_search_or_list_intent = any(

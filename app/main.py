@@ -439,12 +439,24 @@ async def chat(request: Request, req: QueryRequest):
             accumulated_tokens = []
             prompt_preview = f"Context Length: {len(context_data)} chars | Question: {req.question}"
 
-            for token in generate_answer_stream(req.question, context_data, req.session_id, docs=docs):
-                accumulated_tokens.append(token)
-                yield f"data: {json.dumps({'token': token})}\n\n"
-                await asyncio.sleep(0.005) # Cooperative yield
+            is_direct_catalog = isinstance(context_data, str) and context_data.startswith("According to the official TNEA database, there are")
 
-            full_answer = "".join(accumulated_tokens).strip()
+            if is_direct_catalog:
+                from app.services.llm import append_citations
+                full_answer = append_citations(context_data, docs)
+                # Stream the 100% complete catalog in smooth chunks directly to the UI
+                chunk_size = 400
+                for idx in range(0, len(full_answer), chunk_size):
+                    chunk = full_answer[idx:idx + chunk_size]
+                    yield f"data: {json.dumps({'token': chunk})}\n\n"
+                    await asyncio.sleep(0.01)
+            else:
+                for token in generate_answer_stream(req.question, context_data, req.session_id, docs=docs):
+                    accumulated_tokens.append(token)
+                    yield f"data: {json.dumps({'token': token})}\n\n"
+                    await asyncio.sleep(0.005) # Cooperative yield
+
+                full_answer = "".join(accumulated_tokens).strip()
             tracer.log_llm_call(prompt=prompt_preview, answer=full_answer)
             tracer.finish()
 
@@ -553,15 +565,21 @@ def query(request: Request, req: QueryRequest):
         # 5) Generate Answer with Grounded Citations
         prompt_preview = f"Context Length: {len(context_data)} chars | Question: {req.question}"
         is_error = False
-        try:
-            answer = _llm_retry(generate_answer, req.question, context_data, req.session_id, 
-                               reference_answer=None, intent=intent, docs=docs)
-            if answer.startswith("Error:"):
+        is_direct_catalog = isinstance(context_data, str) and context_data.startswith("According to the official TNEA database, there are")
+
+        if is_direct_catalog:
+            from app.services.llm import append_citations
+            answer = append_citations(context_data, docs)
+        else:
+            try:
+                answer = _llm_retry(generate_answer, req.question, context_data, req.session_id, 
+                                   reference_answer=None, intent=intent, docs=docs)
+                if answer.startswith("Error:"):
+                    is_error = True
+            except Exception as e:
+                logger.error(f"🚨 LLM Generation failed: {e}", exc_info=True)
+                answer = f"Error: LLM Generation failed with error: {type(e).__name__}: {e!s}"
                 is_error = True
-        except Exception as e:
-            logger.error(f"🚨 LLM Generation failed: {e}", exc_info=True)
-            answer = f"Error: LLM Generation failed with error: {type(e).__name__}: {e!s}"
-            is_error = True
 
         tracer.log_llm_call(prompt=prompt_preview, answer=answer)
         tracer.finish()
