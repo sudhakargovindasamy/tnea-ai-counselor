@@ -1139,7 +1139,6 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
     entity_doc = None
     if detected_college:
         entity_doc = resolve_college_entity(detected_college)
-    if not entity_doc and not compare_colleges:
     if not entity_doc and not compare_colleges and not is_aggregation_query and not (branch_code and not detected_college):
         entity_doc = resolve_college_entity(query)
 
@@ -1147,13 +1146,6 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
         doc_copy = dict(entity_doc)
         doc_copy["rerank_score"] = 10.0
         return [doc_copy], format_context_xml([doc_copy])
-
-    # 3. AGGREGATIONS & DIRECT CATALOG FILTERING
-    is_aggregation_query = (
-        active_filters.get("is_aggregation") is True or
-        (intent == "numerical" and active_filters.get("numerical_metric") in ["total_intake", "fees", "hostel_rent"]) or
-        bool(re.search(r'\b(sum|total\s+(?:number\s+of\s+)?seats|total\s+intake|how\s+many\s+seats|sum\s+of\s+seats|count\s+(?:of\s+)?colleges|how\s+many\s+colleges)\b', query_lower))
-    )
 
     if is_aggregation_query and branch_code:
         agg = compute_course_aggregation(branch_code=branch_code, district=district)

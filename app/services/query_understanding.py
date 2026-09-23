@@ -222,21 +222,9 @@ Question: {question}
     if top_m:
         extracted["explicit_top_k"] = int(top_m.group(1))
 
-    if re.search(r'\b(sum|total\s+(?:number\s+of\s+)?seats|total\s+intake|how\s+many\s+seats|sum\s+of\s+seats|count\s+(?:of\s+)?colleges|how\s+many\s+colleges)\b', q_low):
     if re.search(AGGREGATION_PATTERN, q_low):
         extracted["is_aggregation"] = True
 
-    try:
-        from app.services.retrieval import resolve_college_entity
-        resolved_doc = resolve_college_entity(question)
-        if resolved_doc:
-            c_name = resolved_doc.get("metadata", {}).get("college_name")
-            if c_name:
-                extracted["college_name"] = c_name
-                if extracted.get("intent") in ["list", "filter"]:
-                    extracted["intent"] = "search"
-    except Exception as e:
-        logger.debug(f"Deterministic entity check: {e}")
     if not extracted.get("is_aggregation"):
         try:
             from app.services.retrieval import resolve_college_entity
