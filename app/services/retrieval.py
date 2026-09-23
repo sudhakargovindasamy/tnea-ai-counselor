@@ -190,15 +190,82 @@ CANONICAL_BRANCH_NAMES = {
 }
 
 DISTRICT_SYNONYMS = {
-    "kancheepuram": "Kanchipuram", "kanchipuram": "Kanchipuram", "chengalpet": "Chengalpattu", "chengalpattu": "Chengalpattu",
-    "trichirappalli": "Tiruchirappalli", "trichy": "Tiruchirappalli", "kanniyakumari": "Kanyakumari", "kanyakumari": "Kanyakumari",
-    "villupuram": "Viluppuram", "viluppuram": "Viluppuram", "the nilgiris": "Nilgiris", "nilgiris": "Nilgiris",
-    "salem": "Salem", "coimbatore": "Coimbatore", "chennai": "Chennai", "madurai": "Madurai", "erode": "Erode",
-    "thiruvallur": "Tiruvallur", "tiruvallur": "Tiruvallur", "thiruvannamalai": "Tiruvannamalai", "tiruvannamalai": "Tiruvannamalai",
-    "thiruvarur": "Tiruvarur", "tiruvarur": "Tiruvarur", "thirunelveli": "Tirunelveli", "tirunelveli": "Tirunelveli",
-    "dharmapuri": "Dharmapuri", "krishnagiri": "Krishnagiri", "namakkal": "Namakkal", "dindigul": "Dindigul",
-    "thanjavur": "Thanjavur", "karur": "Karur", "cuddalore": "Cuddalore", "vellore": "Vellore",
-    "virudhunagar": "Virudhunagar", "sivagangai": "Sivagangai", "ranipet": "Ranipet", "tirupattur": "Tirupattur"
+    # Ariyalur
+    "ariyalur": "Ariyalur",
+    # Chengalpattu
+    "chengalpattu": "Chengalpattu", "chengalpet": "Chengalpattu", "chengai": "Chengalpattu",
+    # Chennai
+    "chennai": "Chennai", "madras": "Chennai",
+    # Coimbatore
+    "coimbatore": "Coimbatore", "kovai": "Coimbatore", "cbe": "Coimbatore",
+    # Cuddalore
+    "cuddalore": "Cuddalore",
+    # Dharmapuri
+    "dharmapuri": "Dharmapuri",
+    # Dindigul
+    "dindigul": "Dindigul", "dindukkal": "Dindigul",
+    # Erode
+    "erode": "Erode",
+    # Kallakurichi
+    "kallakurichi": "Kallakurichi", "kallakuruchi": "Kallakurichi",
+    # Kanchipuram
+    "kanchipuram": "Kanchipuram", "kancheepuram": "Kanchipuram", "kanchi": "Kanchipuram",
+    # Kanyakumari
+    "kanyakumari": "Kanyakumari", "kanniyakumari": "Kanyakumari", "nagercoil": "Kanyakumari",
+    # Karur
+    "karur": "Karur",
+    # Krishnagiri
+    "krishnagiri": "Krishnagiri", "hosur": "Krishnagiri",
+    # Madurai
+    "madurai": "Madurai",
+    # Mayiladuthurai
+    "mayiladuthurai": "Mayiladuthurai", "mayavaram": "Mayiladuthurai", "mayiladuthorai": "Mayiladuthurai",
+    # Nagapattinam
+    "nagapattinam": "Nagapattinam", "nagappattinam": "Nagapattinam", "nagai": "Nagapattinam",
+    # Namakkal
+    "namakkal": "Namakkal", "rasipuram": "Namakkal", "tiruchengode": "Namakkal",
+    # Perambalur
+    "perambalur": "Perambalur",
+    # Pudukkottai
+    "pudukkottai": "Pudukkottai", "pudukottai": "Pudukkottai",
+    # Ramanathapuram
+    "ramanathapuram": "Ramanathapuram", "ramnad": "Ramanathapuram",
+    # Ranipet
+    "ranipet": "Ranipet", "melvisharam": "Ranipet",
+    # Salem
+    "salem": "Salem",
+    # Sivagangai
+    "sivagangai": "Sivagangai", "sivaganga": "Sivagangai", "karaikudi": "Sivagangai",
+    # Tenkasi
+    "tenkasi": "Tenkasi",
+    # Thanjavur
+    "thanjavur": "Thanjavur", "tanjore": "Thanjavur", "thanjai": "Thanjavur", "kumbakonam": "Thanjavur",
+    # The Nilgiris
+    "the nilgiris": "The Nilgiris", "nilgiris": "The Nilgiris", "ooty": "The Nilgiris", "nilgiri": "The Nilgiris", "uadhagamandalam": "The Nilgiris",
+    # Theni
+    "theni": "Theni",
+    # Thoothukudi
+    "thoothukudi": "Thoothukudi", "thoothukkudi": "Thoothukudi", "tuticorin": "Thoothukudi",
+    # Tiruchirappalli
+    "tiruchirappalli": "Tiruchirappalli", "trichirappalli": "Tiruchirappalli", "trichy": "Tiruchirappalli", "tiruchi": "Tiruchirappalli", "tiruchy": "Tiruchirappalli",
+    # Tirunelveli
+    "tirunelveli": "Tirunelveli", "thirunelveli": "Tirunelveli", "nellai": "Tirunelveli",
+    # Tirupattur
+    "tirupattur": "Tirupattur", "thirupattur": "Tirupattur",
+    # Tiruppur
+    "tiruppur": "Tiruppur", "thiruppur": "Tiruppur", "tirupur": "Tiruppur",
+    # Tiruvallur
+    "tiruvallur": "Tiruvallur", "thiruvallur": "Tiruvallur",
+    # Tiruvannamalai
+    "tiruvannamalai": "Tiruvannamalai", "thiruvannamalai": "Tiruvannamalai",
+    # Tiruvarur
+    "tiruvarur": "Tiruvarur", "thiruvarur": "Tiruvarur",
+    # Vellore
+    "vellore": "Vellore",
+    # Viluppuram
+    "viluppuram": "Viluppuram", "villupuram": "Viluppuram",
+    # Virudhunagar
+    "virudhunagar": "Virudhunagar", "sivakasi": "Virudhunagar", "rajapalayam": "Virudhunagar"
 }
 
 TAMIL_NADU_DISTRICTS = set(DISTRICT_SYNONYMS.keys()) | {v.lower() for v in DISTRICT_SYNONYMS.values()}
@@ -451,7 +518,7 @@ def extract_district(query: str, filters: dict = None) -> Optional[str]:
         return filters["district"].strip().title()
 
     query_lower = query.lower()
-    for d_key, d_norm in DISTRICT_SYNONYMS.items():
+    for d_key, d_norm in sorted(DISTRICT_SYNONYMS.items(), key=lambda x: len(x[0]), reverse=True):
         if re.search(rf"\b{re.escape(d_key)}\b", query_lower):
             return d_norm
     return None
@@ -547,6 +614,9 @@ def deduplicate_docs(docs: List[Dict]) -> List[Dict]:
 def handle_cutoff_query(query: str, filters: dict = None, top_k: int = 5) -> Tuple[Optional[List[Dict]], Optional[str]]:
     q_lower = query.lower()
     if "cutoff" in q_lower or "closing rank" in q_lower:
+        # If student asks about cutoff calculation, formula, or merit marks out of 200, let it pass to admission rules
+        if re.search(r'\b(how\s+is\s+(?:the\s+)?cutoff\s+calculated|cutoff\s+formula|calculate\s+cutoff|cutoff\s+calculation|merit\s+mark|marks?\s+out\s+of\s+200|how\s+is\s+merit\s+calculated)\b', q_lower):
+            return None, None
         msg = ("I don't have cutoff/closing rank data in my database. I can help with college facilities, "
                "branches, and admission rules. For cutoff predictions, check tneaonline.org.")
         logger.info("🎯 Cutoff query detected: Gracefully declined without vector search.")
@@ -857,7 +927,96 @@ def get_colleges_by_filters(district: str = None, branch_code: str = None,
     except Exception as e:
         logger.debug(f"Supabase filter query exception: {e}")
 
-    return []
+# ═══════════════ 📜 TNEA ADMISSION RULES RETRIEVER ═══════════════
+ADMISSION_TRIGGER_PATTERNS = [
+    r"\b(rule\s+of\s+reservation|reservation\s+(?:percentage|percentages|rule|rules|policy|system|ratio)|seat\s+allocation|quota\s+percentage|categories?\s+of\s+reservation|percentage\s+(?:of|for)\s+(?:oc|bc|bcm|mbc|sc|sca|st)|st\s+quota\s+percentage)\b",
+    r"\b(percentage\s+of\s+seats|seats?\s+(?:are\s+)?reserved\s+for|how\s+many\s+(?:seats|percentage)\s+(?:are\s+)?reserved)\b",
+    r"\b(7\.5%|7\.5\s*percent|government\s+school\s+(?:reservation|quota|fee|waiver|students?))\b",
+    r"\b(first\s+graduate|first\s+graduation|fg\s+concession|fg\s+fee|first\s+generation\s+graduate)\b",
+    r"\b(aicte\s+(?:tuition\s+)?fee\s+waiver|aicte\s+waiver|aicte\s+scheme)\b",
+    r"\b(post[\s\-]matric|sc\s+scholarship|st\s+scholarship|sca\s+scholarship)\b",
+    r"\b(tuition\s+fee\s+concession|fee\s+concession|fee\s+waiver)\b",
+    r"\b(registration\s+fee|application\s+fee|cost\s+of\s+application|how\s+to\s+register|registration\s+procedure|registration\s+requirement|application\s+portal|tneaonline\.org|dte\.tn\.gov\.in|how\s+to\s+apply\s+for\s+tnea|steps\s+to\s+apply|websites?\s+to\s+register|official\s+websites?)\b",
+    r"\b(upload(?:ing)?\s+(?:copy\s+of\s+)?(?:original\s+)?certificates?|certificates?\s+(?:that\s+are\s+|are\s+|is\s+)?(?:required|needed|to\s+upload)|documents?\s+(?:that\s+are\s+|are\s+|is\s+)?(?:required|needed|to\s+upload)|what\s+(?:documents?|certificates?)\s+(?:are\s+|is\s+)?needed|which\s+certificates?\s+(?:are\s+|is\s+)?needed)\b",
+    r"\b(merit\s+list|merit\s+mark|rank\s+calculation|cutoff\s+formula|mark\s+distribution|marks?\s+out\s+of\s+200|how\s+is\s+merit\s+calculated|tnea\s+merit|tie[\s\-]break|tie[\s\-]breaker|how\s+is\s+(?:the\s+)?cutoff\s+calculated|mathematics\s+marks\s+calculated|marks\s+are\s+allocated\s+to\s+physics)\b",
+    r"\b(tentative\s+allotment|choice\s+filling|accept\s+and\s+join|accept\s+and\s+upward|decline\s+and\s+move|decline\s+and\s+quit|confirmation\s+options|counselling\s+stages|stages\s+of\s+(?:online\s+)?counselling|allotment\s+confirmation|counselling\s+rounds?|counselling\s+procedure|counselling\s+process|steps\s+in\s+counselling|fails?\s+to\s+report|procedure\s+for\s+allotment)\b",
+    r"\b(special\s+reservation|ex[\s\-]servicemen|differently\s+abled|benchmark\s+disabilit|eminent\s+sports|sports\s+quota|pwd\s+quota|quota\s+for\s+differently\s+abled|sports\s+persons?)\b",
+    r"\b(marine\b.*\b(eligibilit\w*|require\w*|physical\w*|medic\w*|imu|cet|height\w*|weight\w*|age|vision|eyesight|fitness|criteria|rule\w*|pcm|qualification\w*)|(eligibilit\w*|require\w*|physical\w*|medic\w*|imu|cet|height\w*|weight\w*|age|vision|eyesight|fitness|criteria|rule\w*|pcm|qualification\w*)\b.*\bmarine)\b",
+    r"\b(mining\b.*\b(female|women|woman|girl|gender|mines\s+act|rule|rules|restriction|underground|shaft|permitted|allowed|prohibited|criteria|eligibility)|(female|women|woman|girl|gender|mines\s+act|rule|rules|restriction|underground|shaft|permitted|allowed|prohibited)\b.*\bmining)\b",
+    r"\b(nativity\s+certificates?|nativity\s+rules?|other\s+state\s+candidates|central\s+government\s+employees|general\s+eligibility|who\s+needs\s+nativity|sri\s*lankan\s+tamil\s+refugees?)\b"
+]
+
+def is_admission_rule_query(q_low: str) -> bool:
+    for pat in ADMISSION_TRIGGER_PATTERNS:
+        if re.search(pat, q_low):
+            return True
+    return False
+
+COMMON_STOPWORDS = {
+    "the", "is", "at", "which", "on", "what", "how", "for", "and", "in", "to",
+    "of", "a", "an", "does", "are", "can", "who", "where", "why", "from", "with",
+    "by", "about", "any", "some", "be", "been", "being", "have", "has", "had",
+    "do", "did", "doing", "would", "should", "could", "there", "their", "they",
+    "this", "that", "these", "those", "i", "you", "he", "she", "it", "we", "tnea",
+    "rule", "rules", "according"
+}
+
+def rank_admission_docs(query: str, top_k: int = 2) -> List[Dict]:
+    q_low = query.lower()
+    adm_docs = _get_local_admission_documents()
+    words = [w for w in re.sub(r"[^\w\s\.\%]", " ", q_low).split() if w not in COMMON_STOPWORDS and len(w) > 1]
+    
+    scored = []
+    for d in adm_docs:
+        meta = d.get("metadata", {})
+        sec = meta.get("section", "").lower()
+        content = d.get("content", "").lower()
+        score = 0.0
+
+        # Exact domain boosters
+        if "marine" in q_low:
+            if "course: marine engineering" in content: score += 150.0
+            else: score -= 50.0
+        if "mining" in q_low:
+            if "course: mining engineering" in content: score += 150.0
+            else: score -= 50.0
+            
+        if any(w in q_low for w in ["differently abled", "disabilit", "ex-servicemen", "sports person", "sports quota", "special reservation"]):
+            if "special reservation categories" in sec: score += 120.0
+        elif "reservation" in q_low or "rule of reservation" in q_low or "allocation of seats" in q_low or "quota percentage" in q_low:
+            if "allocation of seats" in sec: score += 100.0
+            
+        if any(w in q_low for w in ["first graduate", "aicte", "fee concession", "post matric", "post-matric", "scholarship", "7.5", "fee waiver"]):
+            if any(w in q_low for w in ["upload", "documents", "certificate"]):
+                if "uploading copy of original certificates" in sec: score += 110.0
+                elif "tuition fee concession" in sec: score += 90.0
+            else:
+                if "tuition fee concession" in sec: score += 120.0
+                
+        if "registration fee" in q_low or "application fee" in q_low or "how to register" in q_low or "registration portal" in q_low or "application portal" in q_low or "websites to register" in q_low or "cost of application" in q_low or "registration procedure" in q_low:
+            if "procedure for registration" in sec: score += 120.0
+            
+        if "upload" in q_low or "certificates required" in q_low or "documents required" in q_low or "original certificates" in q_low or "documents to upload" in q_low or "certificates must be uploaded" in q_low or "certificates are required" in q_low:
+            if "uploading copy of original certificates" in sec: score += 120.0
+            
+        if "merit mark" in q_low or "merit list" in q_low or "formula" in q_low or "200" in q_low or "cutoff calculated" in q_low or "mathematics marks" in q_low or "allocated to physics" in q_low or "stages of online counselling" in q_low:
+            if "online choice filling and confirmation" in sec: score += 120.0
+            
+        if "tentative allotment" in q_low or "confirmation options" in q_low or "accept and join" in q_low or "accept and upward" in q_low or "decline and" in q_low or "fails to report" in q_low:
+            if "counselling allotment and confirmation" in sec: score += 120.0
+            
+        if "nativity" in q_low or "other state" in q_low or "central government" in q_low or "general eligibility" in q_low or "refugee" in q_low:
+            if "general eligibility rules" in sec: score += 120.0
+
+        # Section title match
+        for w in words:
+            if w in sec: score += 15.0
+            score += content.count(w) * (3.0 if len(w) > 4 else 1.0)
+            
+        scored.append((score, d))
+        
+    scored.sort(key=lambda x: x[0], reverse=True)
+    return [d for _, d in scored[:top_k]]
 
 # ─────────────── MAIN RETRIEVE ORCHESTRATOR ───────────────
 def retrieve(query: str, top_k: int = 5, filters: dict = None,
@@ -897,7 +1056,20 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
     # 1. CUTOFF / CLOSING RANK QUERIES
     if "cutoff" in query_lower or "closing rank" in query_lower:
         cutoff_docs, cutoff_msg = handle_cutoff_query(query, active_filters, top_k)
-        return cutoff_docs, cutoff_msg
+        if cutoff_msg:
+            return cutoff_docs, cutoff_msg
+
+    # 1.5 TNEA ADMISSION RULES & COUNSELLING BROCHURE ROUTING
+    # Evaluated before college lookup so policy queries mentioning "government", "act", "mines",
+    # "hostel fee", etc. are not hijacked by colleges like GCE Bargur or ACT Campus.
+    if is_admission_rule_query(query_lower):
+        adm_docs = rank_admission_docs(query, top_k=2)
+        if adm_docs:
+            for d in adm_docs:
+                d["rerank_score"] = 10.0
+            sec_name = adm_docs[0].get("metadata", {}).get("section", "Admission Information")
+            logger.info(f"📜 Admission rule query routed to '{sec_name}'")
+            return adm_docs, format_context_xml(adm_docs)
 
     # Extract district and branch code
     district = extract_district(query, active_filters)
@@ -944,6 +1116,17 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
         logger.info(f"📊 Aggregation handled: {agg['branch_name']} -> {agg['total_colleges']} colleges, {agg['total_seats']} seats")
         return preview_docs, agg_text
 
+    # Non-TN Out-of-Scope Detection
+    NON_TN_LOCATIONS = [
+        "delhi", "bangalore", "bengaluru", "hyderabad", "mumbai", "pune", "kolkata",
+        "karnataka", "kerala", "andhra", "andhra pradesh", "telangana", "maharashtra",
+        "noida", "gurgaon", "gurugram", "chandigarh", "jaipur", "ahmedabad", "patna",
+        "bhopal", "indore", "lucknow", "kochi", "cochin", "trivandrum", "thiruvananthapuram",
+        "calicut", "kozhikode", "mangalore", "mangaluru", "mysore", "mysuru"
+    ]
+    if any(re.search(rf"\b{re.escape(loc)}\b", query_lower) for loc in NON_TN_LOCATIONS) and not district and not detected_college:
+        return None, "The current database only contains TNEA-approved engineering colleges within Tamil Nadu. I cannot provide information for colleges outside Tamil Nadu."
+
     # Check for Explicit Top-K request (e.g. "top 3 colleges", "top 5", "best 3", "give me 3 colleges")
     explicit_k = active_filters.get("explicit_top_k")
     if explicit_k is None:
@@ -956,29 +1139,30 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
             explicit_k = int(top_match.group(1))
 
     is_hostel_query = "hostel" in query_lower or "mess" in query_lower or "room rent" in query_lower
-    is_college_list_query = (bool(district) or bool(branch_code) or is_autonomous or is_hostel_query) and (
-        "colleges" in query_lower or 
-        "college" in query_lower or 
-        "clgs" in query_lower or 
-        "clg" in query_lower or 
-        "engineering colleges" in query_lower or 
-        "what engineering" in query_lower or 
-        "which college" in query_lower or 
-        "what college" in query_lower or 
-        "offer" in query_lower or 
-        "list" in query_lower or 
-        "have" in query_lower or
-        bool(branch_code) or
-        is_autonomous or
-        is_hostel_query
+    is_placement_query = bool(re.search(r'\b(placement|placements|package|packages|salary|salaries|job|jobs|hiring|recruitment|placed)\b', query_lower))
+    is_performance_query = bool(re.search(r'\b(performance|pass\s+percentage|pass\s+rate|results?|academics?)\b', query_lower))
+    is_rank_query = bool(re.search(r'\b(top|best|rank|ranking|rankings|leading|premier|good)\b', query_lower))
+
+    is_college_list_query = (
+        bool(district) or 
+        bool(branch_code) or 
+        is_autonomous or 
+        is_hostel_query or
+        is_placement_query or
+        is_performance_query or
+        is_rank_query or
+        any(w in query_lower for w in ["colleges", "college", "clgs", "clg", "engineering", "institutes", "options", "list", "which", "what", "where"])
     )
 
-    is_listing_indicator = bool(re.search(
-        r'\b(list|colleges|college|clgs|clg|which|what|show|find|options|where|top|best|offer|offers|offering|have|has)\b',
-        query_lower
-    ))
+    is_listing_indicator = (
+        bool(re.search(
+            r'\b(list|colleges|college|clgs|clg|which|what|show|find|options|where|top|best|offer|offers|offering|have|has|placement|placements|package|packages|salary|salaries|job|jobs|hiring|performance|pass\s+rate|pass\s+percentage|results?|rank|ranking|rankings|across|region|district)\b',
+            query_lower
+        )) or 
+        bool(district)
+    )
 
-    if is_listing_indicator and (is_college_list_query or bool(branch_code)):
+    if is_listing_indicator and (is_college_list_query or bool(branch_code) or bool(district)):
         if explicit_k is not None:
             # User specifically asked for "top N" or "best N" (e.g. top 3, top 5)
             target_limit = max(1, explicit_k)
@@ -995,7 +1179,7 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
                     c["rerank_score"] = 9.5
                 return catalog_docs, format_context_xml(catalog_docs)
         else:
-            # Broad listing query (e.g. "List the colleges that offer CSE course", "Which colleges have Marine Engineering")
+            # Broad listing query or regional overview (e.g. "How is placement across erode region", "List colleges with CSE")
             # Fetch ALL matching colleges without artificial top_k truncation!
             catalog_docs = get_colleges_by_filters(
                 district=district,
@@ -1009,12 +1193,28 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
                 for c in catalog_docs:
                     c["rerank_score"] = 9.0
                 
-                # If small list (<= 15 colleges, e.g. Marine, Mining, Petroleum), format full cards
-                if len(catalog_docs) <= 15:
-                    return catalog_docs, format_context_xml(catalog_docs)
+                # If district query, or small/medium list (<= 25 colleges, e.g. Erode 14, Salem 15, Madurai 15, Marine, Mining)
+                # or analytical query (placement/performance/ranking):
+                # Pass the rich XML cards to LLM so it has all placement rates, pass rates, and branch details!
+                if len(catalog_docs) <= 25 or is_placement_query or is_performance_query or is_rank_query or bool(district):
+                    # For very large districts like Coimbatore (60 colleges), take top 25 so LLM receives deep analysis without token limit issues
+                    return catalog_docs[:25], format_context_xml(catalog_docs[:25])
                 else:
-                    # For complete in-chat listings (e.g. 408 CSE colleges), format full college list
+                    # For pure statewide directories (e.g. 408 CSE colleges across Tamil Nadu), format full college list
                     return catalog_docs, format_complete_college_list_response(catalog_docs, branch_code=branch_code, district=district)
+            else:
+                # Filters were applied (e.g. district and/or branch) but 0 colleges matched!
+                # Do NOT fall through to generic statewide colleges. Give a clear, factual answer.
+                if district and branch_code:
+                    b_name = CANONICAL_BRANCH_NAMES.get(branch_code, f"{branch_code} Engineering")
+                    return None, f"According to the official TNEA database, there are currently no engineering colleges in {district} offering {b_name} ({branch_code})."
+                elif district and is_autonomous:
+                    return None, f"According to the official TNEA database, there are currently no autonomous engineering colleges in {district}."
+                elif district:
+                    return None, f"According to the official TNEA database, there are no engineering colleges in {district} matching your criteria."
+                elif branch_code:
+                    b_name = CANONICAL_BRANCH_NAMES.get(branch_code, f"{branch_code} Engineering")
+                    return None, f"According to the official TNEA database, there are currently no engineering colleges offering {b_name} ({branch_code})."
 
     # 4. Check if the user specifically asked for an explicit NON-EXISTENT college entity
     is_search_or_list_intent = any(
@@ -1037,24 +1237,17 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
     if explicit_target and not is_search_or_list_intent:
         return None, f"The college '{explicit_target}' does not exist in the official TNEA database. Please verify the college name or check if it participates in TNEA counselling."
 
-    # 5. ROUTING: ADMISSION RULES
-    is_admission_query = bool(re.search(
+    # 5. ROUTING: ADMISSION RULES (Fallback if not caught at Step 3.5)
+    is_admission_query = is_admission_rule_query(query_lower) or bool(re.search(
         r"\b(reservation|counselling|eligibility|native|certificate|tnea rule|first graduate|community|oc|bc|mbc|sc|st|7\.5%|quota)\b",
         query_lower
     ))
     if is_admission_query:
-        adm_docs = _get_local_admission_documents()
-        words = [w for w in re.sub(r"[^\w\s]", " ", query_lower).split() if len(w) > 2]
-        scored_adm = []
-        for d in adm_docs:
-            content_low = d.get("content", "").lower()
-            score = sum(content_low.count(w) for w in words)
-            if score > 0:
-                scored_adm.append((score, d))
-        if scored_adm:
-            scored_adm.sort(key=lambda x: x[0], reverse=True)
-            top_adm = [doc for _, doc in scored_adm[:top_k]]
-            return top_adm, format_context_xml(top_adm)
+        adm_docs = rank_admission_docs(query, top_k=top_k)
+        if adm_docs:
+            for d in adm_docs:
+                d["rerank_score"] = 10.0
+            return adm_docs, format_context_xml(adm_docs)
 
     # 6. BROAD IN-MEMORY TEXT RANKING (0 MB PyTorch overhead, runs in 1ms)
     local_docs = _get_local_documents()
