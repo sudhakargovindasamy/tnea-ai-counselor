@@ -114,6 +114,16 @@ def _generate_with_fallback(client, model_list: list, contents: str, config, sch
     logger.error(f"🚨 All fallback models exhausted. Last error: {last_error}")
     return None
 
+AGGREGATION_PATTERN = (
+    r'\b('
+    r'sum(\s+of)?|'
+    r'total\s+(?:number\s+of\s+|no\s+of\s+|num\s+of\s+)?(?:seats|intake|colleges?|collages?|clgs?)|'
+    r'total\s+(?:seats|intake|colleges?|collages?|clgs?)|'
+    r'how\s+many\s+(?:seats|intake|colleges?|collages?|clgs?)|'
+    r'(?:number|no|num|count)\s+of\s+(?:seats|intake|colleges?|collages?|clgs?)'
+    r')\b'
+)
+
 # ==========================================
 # 🧠 MAIN FUNCTIONS
 # ==========================================
@@ -122,6 +132,8 @@ def understand_query(question: str) -> dict:
     
     # ⚡ Instant Fast-Path for Aggregations & Seat Sum Queries (< 1ms)
     is_agg_query = bool(re.search(r'\b(sum|total\s+(?:number\s+of\s+)?seats|total\s+intake|how\s+many\s+seats|sum\s+of\s+seats|count\s+(?:of\s+)?colleges|how\s+many\s+colleges)\b', q_low))
+    # ⚡ Instant Fast-Path for Aggregations & Seat/College Sum Queries (< 1ms)
+    is_agg_query = bool(re.search(AGGREGATION_PATTERN, q_low))
     if is_agg_query:
         from app.services.retrieval import extract_branch_code, extract_district
         b_code = extract_branch_code(question, {})
@@ -138,6 +150,7 @@ def understand_query(question: str) -> dict:
 
     # ⚡ Instant Fast-Path for Direct Listing Queries (< 1ms)
     is_list_query = bool(re.search(r'\b(list\s+(?:the\s+|out\s+the\s+|all\s+)?colleges|which\s+colleges|what\s+are\s+the\s+colleges|what\s+colleges)\b', q_low))
+    is_list_query = bool(re.search(r'\b(list\s+(?:the\s+|out\s+the\s+|all\s+)?(?:colleges?|collages?|clgs?)|which\s+(?:colleges?|collages?|clgs?)|what\s+are\s+the\s+(?:colleges?|collages?|clgs?)|what\s+(?:colleges?|collages?|clgs?))\b', q_low))
     if is_list_query and not ("compare" in q_low or " vs " in q_low):
         from app.services.retrieval import extract_branch_code, extract_district
         b_code = extract_branch_code(question, {})
@@ -210,6 +223,7 @@ Question: {question}
         extracted["explicit_top_k"] = int(top_m.group(1))
 
     if re.search(r'\b(sum|total\s+(?:number\s+of\s+)?seats|total\s+intake|how\s+many\s+seats|sum\s+of\s+seats|count\s+(?:of\s+)?colleges|how\s+many\s+colleges)\b', q_low):
+    if re.search(AGGREGATION_PATTERN, q_low):
         extracted["is_aggregation"] = True
 
     try:
@@ -223,6 +237,18 @@ Question: {question}
                     extracted["intent"] = "search"
     except Exception as e:
         logger.debug(f"Deterministic entity check: {e}")
+    if not extracted.get("is_aggregation"):
+        try:
+            from app.services.retrieval import resolve_college_entity
+            resolved_doc = resolve_college_entity(question)
+            if resolved_doc:
+                c_name = resolved_doc.get("metadata", {}).get("college_name")
+                if c_name:
+                    extracted["college_name"] = c_name
+                    if extracted.get("intent") in ["list", "filter"]:
+                        extracted["intent"] = "search"
+        except Exception as e:
+            logger.debug(f"Deterministic entity check: {e}")
 
     if "branch_code" in extracted and "department_code" not in extracted:
         extracted["department_code"] = extracted["branch_code"]

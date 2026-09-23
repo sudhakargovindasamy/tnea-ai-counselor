@@ -111,6 +111,8 @@ COLLEGE_ALIASES = {
 BRANCH_SYNONYMS = {
     "computer science": "CS", "computer science courses": "CS", "computer science and engineering": "CS",
     "computer science engineering": "CS", "cse": "CS", "cs": "CS",
+    "computer science engineering": "CS", "computer science eng": "CS", "computer science engg": "CS",
+    "comp science": "CS", "comp sci": "CS", "cse": "CS", "cs": "CS", "cs eng": "CS", "cs engg": "CS", "cse eng": "CS", "cse engg": "CS",
     "artificial intelligence and data science": "AD", "ai & ds": "AD", "ai and ds": "AD", "ai&ds": "AD", "ai & data science": "AD", "ai and data science": "AD", "ad": "AD",
     "ai & ml": "AL", "ai and ml": "AL", "ai&ml": "AL", "artificial intelligence and machine learning": "AL", "al": "AL",
     "cse ai & ml": "AM", "cse aiml": "AM", "cse ai ml": "AM", "am": "AM",
@@ -118,10 +120,16 @@ BRANCH_SYNONYMS = {
     
     # ❌ REMOVED "me": "ME" to prevent false positive on "tell me about..."
     "mechanical": "ME", "mechanical engineering": "ME", "mechanical engineering courses": "ME", "mech": "ME",
+    "mechanical eng": "ME", "mechanical engg": "ME", "mech eng": "ME", "mech engg": "ME",
     
     "electronics and communication": "EC", "electronics and communication engineering": "EC", "ece": "EC", "ec": "EC",
+    "electronics and communication eng": "EC", "electronics and communication engg": "EC", "ece eng": "EC", "ece engg": "EC",
+    "electronics": "EC", "electronics engineering": "EC", "electronics eng": "EC", "electronics engg": "EC",
     "electrical and electronics": "EE", "electrical and electronics engineering": "EE", "eee": "EE", "ee": "EE",
     "civil": "CE", "civil engineering": "CE", "ce": "CE",
+    "electrical and electronics eng": "EE", "electrical and electronics engg": "EE", "eee eng": "EE", "eee engg": "EE",
+    "electrical": "EE", "electrical engineering": "EE", "electrical eng": "EE", "electrical engg": "EE",
+    "civil": "CE", "civil engineering": "CE", "ce": "CE", "civil eng": "CE", "civil engg": "CE",
     
     # ❌ REMOVED "it": "IT" to prevent false positive on "tell me about it..."
     "information technology": "IT",
@@ -130,15 +138,25 @@ BRANCH_SYNONYMS = {
     "mechatronics": "MZ", "mechatronics engineering": "MZ", "mz": "MZ",
     "biotechnology": "BT", "bio technology": "BT", "biotech": "BT", "bt": "BT",
     "biomedical": "BM", "bio medical": "BM", "biomedical engineering": "BM", "bm": "BM",
+    "mechatronics": "MZ", "mechatronics engineering": "MZ", "mechatronics eng": "MZ", "mechatronics engg": "MZ", "mz": "MZ",
+    "biotechnology": "BT", "bio technology": "BT", "biotech": "BT", "biotechnology eng": "BT", "biotechnology engg": "BT", "bt": "BT",
+    "biomedical": "BM", "bio medical": "BM", "biomedical engineering": "BM", "biomedical eng": "BM", "biomedical engg": "BM", "bm": "BM",
     "agricultural": "AG", "agriculture": "AG", "agri": "AG", "ag": "AG",
     "chemical": "CH", "chemical engineering": "CH", "ch": "CH",
     "automobile": "AU", "automobile engineering": "AU", "au": "AU",
     "aeronautical": "AE", "aeronautical engineering": "AE", "ae": "AE",
+    "chemical": "CH", "chemical engineering": "CH", "chemical eng": "CH", "chemical engg": "CH", "ch": "CH",
+    "automobile": "AU", "automobile engineering": "AU", "automobile eng": "AU", "automobile engg": "AU", "auto eng": "AU", "auto engg": "AU", "au": "AU",
+    "aeronautical": "AE", "aeronautical engineering": "AE", "aeronautical eng": "AE", "aeronautical engg": "AE", "aero eng": "AE", "aero engg": "AE", "ae": "AE",
     "textile": "TX", "textile technology": "TX", "fashion": "FT", "fashion technology": "FT",
     "marine": "MR", "marine engineering": "MR", "marine engg": "MR", "marine engineering courses": "MR", "marine course": "MR", "mr": "MR",
     "aerospace": "AO", "aerospace engineering": "AO", "ao": "AO",
     "robotics": "RM", "robotics and automation": "RM", "robotics engineering": "RM", "rm": "RM",
     "petroleum": "PE", "petroleum engineering": "PE", "pe": "PE",
+    "marine": "MR", "marine engineering": "MR", "marine engg": "MR", "marine eng": "MR", "marine engineering courses": "MR", "marine course": "MR", "mr": "MR",
+    "aerospace": "AO", "aerospace engineering": "AO", "aerospace eng": "AO", "aerospace engg": "AO", "ao": "AO",
+    "robotics": "RM", "robotics and automation": "RM", "robotics engineering": "RM", "robotics eng": "RM", "robotics engg": "RM", "rm": "RM",
+    "petroleum": "PE", "petroleum engineering": "PE", "petroleum eng": "PE", "petroleum engg": "PE", "pe": "PE",
     "pharmaceutical": "PH", "pharmaceutical technology": "PH", "ph": "PH",
     "food technology": "FD", "food tech": "FD", "fd": "FD",
     "mining": "MI", "mining engineering": "MI", "mi": "MI",
@@ -350,6 +368,11 @@ COLLEGE_STOPWORDS = {
     "technology", "technolgoy", "tech", "engg", "eng", "institute", "institutes",
     "institution", "institutions", "autonomous", "deemed", "university", "campus",
     "of", "and", "for", "in", "at", "naac", "grade"
+    "of", "and", "for", "in", "at", "naac", "grade",
+    # Academic & generic terms that should never identify a college on their own
+    "science", "sciences", "arts", "applied", "research", "studies", "higher",
+    "management", "education", "educational", "academy", "polytechnic", "trust",
+    "memorial", "center", "centre", "school", "schools", "general"
 }
 
 def _extract_college_clean_words(text: str) -> List[str]:
@@ -478,6 +501,12 @@ def resolve_college_entity(query_or_name: str) -> Optional[Dict[str, Any]]:
         if distinctive and all(w in q_words for w in distinctive):
             candidates.append((sum(len(w) for w in distinctive), 10.0 + dist_bonus, item))
             continue
+        # D. Single distinctive word college (where college's core brand is exactly 1 word >= 4 chars, excluding districts & course names)
+        if len(non_dist_words) == 1:
+            dist_word = list(non_dist_words)[0]
+            if len(dist_word) >= 4 and dist_word in q_words and dist_word not in BRANCH_SYNONYMS:
+                candidates.append((len(dist_word), 10.0 + dist_bonus, item))
+                continue
 
     if candidates:
         candidates.sort(key=lambda x: (x[1], x[0]), reverse=True)
@@ -1018,6 +1047,16 @@ def rank_admission_docs(query: str, top_k: int = 2) -> List[Dict]:
     scored.sort(key=lambda x: x[0], reverse=True)
     return [d for _, d in scored[:top_k]]
 
+AGGREGATION_PATTERN = (
+    r'\b('
+    r'sum(\s+of)?|'
+    r'total\s+(?:number\s+of\s+|no\s+of\s+|num\s+of\s+)?(?:seats|intake|colleges?|collages?|clgs?)|'
+    r'total\s+(?:seats|intake|colleges?|collages?|clgs?)|'
+    r'how\s+many\s+(?:seats|intake|colleges?|collages?|clgs?)|'
+    r'(?:number|no|num|count)\s+of\s+(?:seats|intake|colleges?|collages?|clgs?)'
+    r')\b'
+)
+
 # ─────────────── MAIN RETRIEVE ORCHESTRATOR ───────────────
 def retrieve(query: str, top_k: int = 5, filters: dict = None,
              compare_colleges: list = None, intent: str = "search", chat_history: list = None):
@@ -1088,11 +1127,20 @@ def retrieve(query: str, top_k: int = 5, filters: dict = None,
     autonomous_filter = True if is_autonomous else (False if active_filters.get("autonomous") in [False, "No", "no"] else None)
 
     # 2. SPECIFIC COLLEGE ENTITY LOOKUP (Universal Multi-Stage Resolver)
+    # 2. AGGREGATIONS & DIRECT CATALOG FILTERING CHECK
+    is_aggregation_query = (
+        active_filters.get("is_aggregation") is True or
+        (intent == "numerical" and active_filters.get("numerical_metric") in ["total_intake", "fees", "hostel_rent"]) or
+        bool(re.search(AGGREGATION_PATTERN, query_lower))
+    )
+
+    # 2.5 SPECIFIC COLLEGE ENTITY LOOKUP (Universal Multi-Stage Resolver)
     detected_college = active_filters.pop("college_name", None)
     entity_doc = None
     if detected_college:
         entity_doc = resolve_college_entity(detected_college)
     if not entity_doc and not compare_colleges:
+    if not entity_doc and not compare_colleges and not is_aggregation_query and not (branch_code and not detected_college):
         entity_doc = resolve_college_entity(query)
 
     if entity_doc:

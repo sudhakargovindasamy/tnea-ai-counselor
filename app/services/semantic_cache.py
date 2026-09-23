@@ -68,6 +68,7 @@ _L1_CACHE = InMemoryLRUCache(capacity=2000, ttl_seconds=3600 * 48)
 # 🧠 L2: SUPABASE CACHE (Fast DB Lookup)
 # ═══════════════════════════════════════════════════════════
 CACHE_VERSION = "v2.3"
+CACHE_VERSION = "v2.4"
 
 def check_cache(question: str) -> dict[str, Any] | None:
     """
